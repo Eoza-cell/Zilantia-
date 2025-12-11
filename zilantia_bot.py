@@ -1,5 +1,6 @@
 import discord
 from discord.ext import commands
+from discord import ui
 import os
 import random
 import json
@@ -13,10 +14,9 @@ TOKEN = os.getenv("DISCORD_TOKEN")
 
 # Set up the bot with necessary intents
 intents = discord.Intents.default()
-intents.message_content = True  # Required to read message content
 intents.members = True # Required to access member information
 
-bot = commands.Bot(intents=intents)
+bot = commands.Bot(command_prefix='/', intents=intents)
 
 @bot.event
 async def on_ready():
@@ -79,6 +79,24 @@ class Location:
             "enemies": [enemy.to_dict() for enemy in self.enemies]
         }
 
+class Mission:
+    def __init__(self, id, name, description, start_objective, end_objective):
+        self.id = id
+        self.name = name
+        self.description = description
+        self.start_objective = start_objective # e.g., {"action": "interact", "target": "Colis suspect"}
+        self.end_objective = end_objective   # e.g., {"action": "interact", "target": "Contact de l'Ombre"}
+
+available_missions = {
+    "livraison_sombre": Mission(
+        id="livraison_sombre",
+        name="Livraison Sombre",
+        description="Un mystérieux colis doit être récupéré dans le Quartier Pauvre et livré à un contact sur le Port. Discrétion absolue.",
+        start_objective={"target": "Colis suspect"},
+        end_objective={"target": "Contact de l'Ombre"}
+    )
+}
+
 class Player:
     def __init__(self, user_id, user_name, user_avatar_url, race, pouvoir):
         self.user_id = user_id
@@ -87,10 +105,12 @@ class Player:
         self.race = race
         self.pouvoir = pouvoir
         self.niveau = 1
-        self.health = 100 # Players start with 100 health
+        self.health = 100
         self.traits_uniques = "Aucun pour le moment."
         self.artefact = "Aucun pour le moment."
-        self.location_key = None # Player starts nowhere
+        self.location_key = None
+        self.active_mission_id = None
+        self.mission_progress = {} # e.g., {"package_collected": True}
 
     def to_dict(self):
         return {
@@ -103,7 +123,9 @@ class Player:
             "health": self.health,
             "traits_uniques": self.traits_uniques,
             "artefact": self.artefact,
-            "location_key": self.location_key
+            "location_key": self.location_key,
+            "active_mission_id": self.active_mission_id,
+            "mission_progress": self.mission_progress
         }
 
     @classmethod
@@ -116,10 +138,12 @@ class Player:
             pouvoir=data["pouvoir"]
         )
         player.niveau = data["niveau"]
-        player.health = data.get("health", 100) # Default to 100 for older profiles
+        player.health = data.get("health", 100)
         player.traits_uniques = data["traits_uniques"]
         player.artefact = data["artefact"]
         player.location_key = data["location_key"]
+        player.active_mission_id = data.get("active_mission_id")
+        player.mission_progress = data.get("mission_progress", {})
         return player
 
 # --- Player Data ---
@@ -162,34 +186,33 @@ def load_world_data():
                 world_locations[key] = Location(
                     name=loc_data["name"],
                     description=loc_data["description"],
-                    pnjs=[PNJ(**pnj_data) for pnj_data in loc_data["pnjs"]],
-                    items=[Item(**item_data) for item_data in loc_data["items"]],
-                    exits=loc_data["exits"],
-                    enemies=[Enemy(**enemy_data) for enemy_data in loc_data["enemies"]]
+                    pnjs=[PNJ(**pnj_data) for pnj_data in loc_data.get("pnjs", [])],
+                    items=[Item(**item_data) for item_data in loc_data.get("items", [])],
+                    exits=loc_data.get("exits", {}),
+                    enemies=[Enemy(**enemy_data) for enemy_data in loc_data.get("enemies", [])]
                 )
     except FileNotFoundError:
-        # If the file doesn't exist, create and save a default world state
-        print("World data file not found, creating a new one.")
+        print("World data file not found, creating a new one with Zilantia GTA theme.")
         world_locations = {
-            "entrepot": Location(
-                name="Entrepôt 7",
-                description="Un vieil entrepôt sur les quais. L'air est lourd d'humidité et de l'odeur du poisson.",
-                pnjs=[PNJ("Marco", "Un docker balafré au regard suspicieux.", "Qu'est-ce que tu veux, étranger ?")],
-                items=[Item("Caisse en bois", "Une caisse lourde et fermée. Impossible de voir ce qu'il y a à l'intérieur.")],
-                exits={"sud": "ruelle"}
+            "quartier_pauvre": Location(
+                name="Quartier Pauvre",
+                description="Un dédale de ruelles humides et de bâtiments délabrés. L'odeur de la pauvreté et du désespoir est palpable.",
+                pnjs=[PNJ("Vieux Leo", "Un vieil homme assis sur un carton, il a tout vu.", "Le Syndicat Noir... ils sont les rois ici. Fais attention à toi.")],
+                items=[Item("Colis suspect", "Une caisse en bois qui vibre légèrement. Prêt pour la mission `/mission`?")],
+                exits={"nord": "port"}
             ),
-            "bar": Location(
-                name="Le Néon Noir",
-                description="Un bar clandestin faiblement éclairé, où la fumée de cigarette danse dans la lumière des néons.",
-                pnjs=[PNJ("Lila", "Une barmaid au sourire énigmatique.", "Sers-toi un verre. Ou cause-moi, si t'as le cran.")],
-                exits={"est": "ruelle"}
+            "port": Location(
+                name="Le Port de Zilantia",
+                description="Des grues rouillées se dressent vers le ciel. Les conteneurs sont une cachette parfaite pour les trafics.",
+                pnjs=[PNJ("Contact de l'Ombre", "Un homme au visage dissimulé.", "Vous avez la livraison ?")],
+                enemies=[Enemy("Homme de main du Syndicat", 40, 8)],
+                exits={"sud": "quartier_pauvre", "est": "manoir_varlox"}
             ),
-            "ruelle": Location(
-                name="La Ruelle des Murmures",
-                description="Une ruelle étroite et sombre, les murs couverts de graffitis mystérieux.",
-                items=[Item("Vieux journal", "Un journal datant de plusieurs semaines. Un article sur une disparition a été encerclé.")],
-                exits={"nord": "entrepot", "ouest": "bar"},
-                enemies=[Enemy("Voyou des Rues", 30, 5)]
+            "manoir_varlox": Location(
+                name="Manoir de Varlox",
+                description="Une immense bâtisse sombre qui surplombe la ville. Les ombres semblent danser sur ses murs.",
+                pnjs=[PNJ("Don Varlox", "Le Roi des Ombres, assis sur un trône d'obsidienne.", "Alors, une nouvelle souris est entrée dans mon royaume...")],
+                exits={"ouest": "port"}
             )
         }
         save_world_data()
@@ -229,14 +252,28 @@ async def start(interaction: discord.Interaction):
 
     await interaction.response.send_message(message)
 
-@bot.tree.command(name="profile", description="Crée ou met à jour la fiche de votre personnage.")
-async def profile(interaction: discord.Interaction, race: str, pouvoir: str):
-    """Creates or updates a player's character profile."""
-    user_id = interaction.user.id
+class ConfirmOverwriteView(ui.View):
+    def __init__(self, user_id, race, pouvoir):
+        super().__init__(timeout=60.0)
+        self.user_id = user_id
+        self.race = race
+        self.pouvoir = pouvoir
 
-    # Create a new Player object
+    @ui.button(label="Oui", style=discord.ButtonStyle.danger)
+    async def confirm(self, interaction: discord.Interaction, button: ui.Button):
+        embed = create_profile(interaction, self.user_id, self.race, self.pouvoir, overwrite=True)
+        await interaction.response.edit_message(content="Votre ancien profil a été écrasé. Voici votre nouvelle fiche :", embed=embed, view=None)
+        self.stop()
+
+    @ui.button(label="Non", style=discord.ButtonStyle.secondary)
+    async def cancel(self, interaction: discord.Interaction, button: ui.Button):
+        await interaction.response.send_message("Opération annulée.", ephemeral=True)
+        self.stop()
+
+def create_profile(interaction, user_id, race, pouvoir, overwrite=False):
+    """Helper function to create or overwrite a profile."""
     player = Player(
-        user_id=interaction.user.id,
+        user_id=user_id,
         user_name=interaction.user.name,
         user_avatar_url=str(interaction.user.avatar.url),
         race=race,
@@ -245,7 +282,6 @@ async def profile(interaction: discord.Interaction, race: str, pouvoir: str):
     player_profiles[user_id] = player
     save_player_data()
 
-    # Create the embed for the profile sheet
     embed = discord.Embed(
         title=f"Fiche de Personnage de {player.user_name}",
         color=discord.Color.blue()
@@ -257,7 +293,23 @@ async def profile(interaction: discord.Interaction, race: str, pouvoir: str):
     embed.add_field(name="Traits Uniques", value=player.traits_uniques, inline=False)
     embed.add_field(name="Artefact", value=player.artefact, inline=False)
 
-    await interaction.response.send_message(embed=embed)
+    return embed
+
+@bot.tree.command(name="profile", description="Crée ou met à jour la fiche de votre personnage.")
+async def profile(interaction: discord.Interaction, race: str, pouvoir: str):
+    """Creates or updates a player's character profile."""
+    user_id = interaction.user.id
+
+    if user_id in player_profiles:
+        view = ConfirmOverwriteView(user_id, race, pouvoir)
+        await interaction.response.send_message(
+            "Un profil existe déjà pour vous. Voulez-vous l'écraser ? Votre progression sera perdue.",
+            view=view,
+            ephemeral=True
+        )
+    else:
+        embed = create_profile(interaction, user_id, race, pouvoir)
+        await interaction.response.send_message(embed=embed)
 
 @bot.tree.command(name="move", description="Déplacement précis dans le monde.")
 async def move(interaction: discord.Interaction, direction: str):
@@ -315,90 +367,177 @@ async def scan(interaction: discord.Interaction):
 
     await interaction.response.send_message(embed=embed)
 
+# --- Combat System ---
+active_combats = {}
+
+class CombatView(ui.View):
+    def __init__(self, player, enemy, original_interaction):
+        super().__init__(timeout=180.0)
+        self.player = player
+        self.enemy = enemy
+        self.original_interaction = original_interaction
+        self.combat_log = ""
+
+    async def update_interaction(self, interaction: discord.Interaction):
+        """Helper to update the combat message."""
+        if self.player.health <= 0 or self.enemy.health <= 0:
+            self.disable_all_items()
+            if self.player.health <= 0:
+                self.combat_log += "\n**Vous avez été vaincu...**"
+                self.player.health = 100 # Reset health
+            else:
+                self.combat_log += f"\n**Vous avez vaincu {self.enemy.name} !**"
+                # Remove enemy from the world
+                location = world_locations[self.player.location_key]
+                location.enemies.pop(0)
+                save_world_data()
+
+            del active_combats[self.player.user_id]
+            save_player_data()
+
+        embed = self.create_embed()
+        await interaction.response.edit_message(embed=embed, view=self)
+
+    def create_embed(self):
+        embed = discord.Embed(title=f"Combat: {self.player.user_name} vs. {self.enemy.name}", color=discord.Color.red())
+        embed.add_field(name="Votre Santé", value=f"{self.player.health}/100", inline=True)
+        embed.add_field(name=f"Santé de {self.enemy.name}", value=f"{self.enemy.health}", inline=True)
+        embed.add_field(name="Log de Combat", value=self.combat_log or "Le combat commence !", inline=False)
+        return embed
+
+    def enemy_turn(self):
+        """The enemy's action."""
+        self.player.health -= self.enemy.damage
+        self.combat_log += f"\n{self.enemy.name} vous attaque et vous inflige {self.enemy.damage} points de dégâts."
+
+    @ui.button(label="Attaquer", style=discord.ButtonStyle.danger)
+    async def attack(self, interaction: discord.Interaction, button: ui.Button):
+        player_damage = random.randint(10, 20)
+        self.enemy.health -= player_damage
+        self.combat_log = f"Vous attaquez {self.enemy.name} et lui infligez {player_damage} points de dégâts."
+        if self.enemy.health > 0:
+            self.enemy_turn()
+        await self.update_interaction(interaction)
+
+    @ui.button(label="Esquiver", style=discord.ButtonStyle.secondary)
+    async def dodge(self, interaction: discord.Interaction, button: ui.Button):
+        dodged = random.choice([True, False])
+        if dodged:
+            self.combat_log = "Vous esquivez l'attaque de l'ennemi !"
+        else:
+            self.combat_log = "Vous n'avez pas réussi à esquiver."
+            self.enemy_turn()
+        await self.update_interaction(interaction)
+
+    @ui.button(label="Pouvoir", style=discord.ButtonStyle.primary)
+    async def power(self, interaction: discord.Interaction, button: ui.Button):
+        power_damage = random.randint(20, 30) # Powers are stronger
+        self.enemy.health -= power_damage
+        self.combat_log = f"Vous utilisez votre pouvoir sur {self.enemy.name} pour {power_damage} points de dégâts !"
+        if self.enemy.health > 0:
+            self.enemy_turn()
+        await self.update_interaction(interaction)
+
+
 @bot.tree.command(name="fight", description="Active le mode combat.")
 async def fight(interaction: discord.Interaction):
     """Activates combat mode."""
     user_id = interaction.user.id
+    if user_id in active_combats:
+        await interaction.response.send_message("Vous êtes déjà en combat.", ephemeral=True)
+        return
+
     if user_id not in player_profiles or player_profiles[user_id].location_key is None:
-        await interaction.response.send_message("Vous n'êtes nulle part. Utilisez `/start` pour commencer votre aventure.")
+        await interaction.response.send_message("Vous n'êtes nulle part. Utilisez `/start` pour commencer votre aventure.", ephemeral=True)
         return
 
     player = player_profiles[user_id]
     location = world_locations[player.location_key]
 
     if not location.enemies:
-        await interaction.response.send_message("Il n'y a personne à combattre ici.")
+        await interaction.response.send_message("Il n'y a personne à combattre ici.", ephemeral=True)
         return
 
-    # For simplicity, we'll fight the first enemy in the list
     enemy = location.enemies[0]
-    player_damage = random.randint(10, 20) # Player damage is random for now
+    active_combats[user_id] = True
 
-    # Simple combat loop
-    combat_log = ""
-    while player.health > 0 and enemy.health > 0:
-        # Player attacks
-        enemy.health -= player_damage
-        combat_log += f"Vous attaquez {enemy.name} et lui infligez {player_damage} points de dégâts.\n"
-        if enemy.health <= 0:
-            combat_log += f"Vous avez vaincu {enemy.name} !\n"
-            location.enemies.pop(0) # Remove the defeated enemy
-            save_world_data() # Save the world state
-            save_player_data()
-            break
-
-        # Enemy attacks
-        player.health -= enemy.damage
-        combat_log += f"{enemy.name} vous attaque et vous inflige {enemy.damage} points de dégâts.\n"
-        if player.health <= 0:
-            combat_log += "Vous avez été vaincu...\n"
-            # Reset player health for next time
-            player.health = 100
-            save_player_data()
-            break
-
-    await interaction.response.send_message(f"**--- RAPPORT DE COMBAT ---**\n{combat_log}")
+    view = CombatView(player=player, enemy=enemy, original_interaction=interaction)
+    embed = view.create_embed()
+    await interaction.response.send_message(embed=embed, view=view)
 
 @bot.tree.command(name="interact", description="Interagir avec un PNJ ou un objet.")
 async def interact(interaction: discord.Interaction, target: str):
-    """Interacts with a target."""
+    """Interacts with a target, potentially for a mission."""
     user_id = interaction.user.id
     if user_id not in player_profiles or player_profiles[user_id].location_key is None:
-        await interaction.response.send_message("Vous n'êtes nulle part. Utilisez `/start` pour commencer votre aventure.")
+        await interaction.response.send_message("Vous n'êtes nulle part. Utilisez `/start` pour commencer votre aventure.", ephemeral=True)
         return
 
     player = player_profiles[user_id]
     location = world_locations[player.location_key]
     target_lower = target.lower()
 
-    # Check for PNJs
+    # Mission Interaction Logic
+    if player.active_mission_id:
+        mission = available_missions[player.active_mission_id]
+
+        # Start objective interaction
+        if not player.mission_progress.get("package_collected") and mission.start_objective["target"].lower() == target_lower:
+            player.mission_progress["package_collected"] = True
+            save_player_data()
+            await interaction.response.send_message(f"Vous avez récupéré le **{target}**. Vous devriez maintenant l'apporter au contact sur le Port.")
+            return
+
+        # End objective interaction
+        if player.mission_progress.get("package_collected") and mission.end_objective["target"].lower() == target_lower:
+            player.active_mission_id = None
+            player.mission_progress = {}
+            # Add a reward later
+            save_player_data()
+            await interaction.response.send_message(f"Mission **{mission.name}** terminée ! Le contact vous remercie d'un signe de tête et disparaît.")
+            return
+
+    # Regular Interaction Logic
     for pnj in location.pnjs:
         if pnj.name.lower() == target_lower:
             await interaction.response.send_message(f"**{pnj.name}**: \"{pnj.dialogue}\"")
             return
 
-    # Check for items
     for item in location.items:
         if item.name.lower() == target_lower:
             await interaction.response.send_message(f"Vous examinez **{item.name}**: {item.description}")
             return
 
-    await interaction.response.send_message(f"Impossible de trouver '{target}' ici.")
+    await interaction.response.send_message(f"Impossible de trouver '{target}' ici.", ephemeral=True)
 
 @bot.tree.command(name="portal", description="Tente d'ouvrir une brèche dimensionnelle.")
 async def portal(interaction: discord.Interaction):
     """Attempts to open a portal."""
     await interaction.response.send_message("Vous essayez d'ouvrir un portail, mais rien ne se passe. Peut-être que le pouvoir vous manque...")
 
-@bot.tree.command(name="mission", description="Génère une mission dynamique.")
+@bot.tree.command(name="mission", description="Accepte ou consulte une mission.")
 async def mission(interaction: discord.Interaction):
-    """Generates a dynamic mission."""
-    missions = [
-        "**Livraison Sombre**: Un paquet suspect doit être livré à l'autre bout de la ville. Discrétion requise.",
-        "**Nettoyage de Rue**: Un gang rival empiète sur votre territoire. Il est temps de leur envoyer un message.",
-        "**Crash sur le Port**: Une cargaison illégale vient d'arriver. Récupérez-la avant la police.",
-    ]
-    await interaction.response.send_message(f"Nouvelle mission disponible : {random.choice(missions)}")
+    """Assigns or checks mission status."""
+    user_id = interaction.user.id
+    if user_id not in player_profiles:
+        await interaction.response.send_message("Veuillez d'abord créer un profil avec `/profile`.", ephemeral=True)
+        return
+
+    player = player_profiles[user_id]
+    if player.active_mission_id:
+        current_mission = available_missions[player.active_mission_id]
+        progress = "Vous avez le colis." if player.mission_progress.get("package_collected") else "Vous devez récupérer le colis."
+        await interaction.response.send_message(f"**Mission en cours : {current_mission.name}**\n{current_mission.description}\n*Statut : {progress}*")
+        return
+
+    # Assign "Livraison Sombre"
+    mission_id = "livraison_sombre"
+    player.active_mission_id = mission_id
+    player.mission_progress = {"package_collected": False}
+    save_player_data()
+    assigned_mission = available_missions[mission_id]
+
+    await interaction.response.send_message(f"**Nouvelle mission acceptée : {assigned_mission.name}**\n{assigned_mission.description}")
 
 @bot.tree.command(name="event", description="Lance un évènement aléatoire.")
 async def event(interaction: discord.Interaction):
