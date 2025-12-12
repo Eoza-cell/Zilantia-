@@ -538,40 +538,55 @@ def generate_text_response(prompt, system_prompt):
             "model": "openai", # Although it says openai, it's their free model
             "seed": random.randint(1, 999999999),
         }
-        response = requests.post(url, json=data)
+        response = requests.post(url, json=data, timeout=15) # Add a 15-second timeout
         response.raise_for_status() # Raise an exception for bad status codes
         # The API returns a JSON object where the response is in 'choices'[0]['message']['content']
         return response.json()['choices'][0]['message']['content']
+    except requests.exceptions.Timeout:
+        print("API Error: Request to Pollinations text API timed out.")
+        return "Le service IA a mis trop de temps à répondre. Il est peut-être surchargé. Veuillez réessayer."
     except requests.exceptions.RequestException as e:
-        print(f"Error calling Pollinations text API: {e}")
-        return "L'IA de dialogue est actuellement indisponible. Veuillez réessayer plus tard."
+        print(f"API Error: Failed to connect to Pollinations text API: {e}")
+        return "Impossible de contacter le service IA. Il est peut-être temporairement hors ligne."
     except (KeyError, IndexError) as e:
-        print(f"Error parsing Pollinations text API response: {e}")
-        print(f"Full response: {response.text}")
-        return "L'IA de dialogue a renvoyé une réponse inattendue. Veuillez réessayer plus tard."
+        print(f"API Error: Invalid response format from Pollinations text API: {e}")
+        print(f"Full response: {response.text if 'response' in locals() else 'No response object'}")
+        return "Le service IA a renvoyé une réponse inattendue. Veuillez réessayer."
 
 # --- AI Image Generation ---
 
 @bot.tree.command(name="image", description="Génère une image d'ambiance de Zilantia.")
 async def image(interaction: discord.Interaction, prompt: str):
     """Generates an image using the Pollinations.ai API."""
-    await interaction.response.defer() # Acknowledge the command, image generation can be slow
+    await interaction.response.defer()
 
-    # The image API doesn't have a formal endpoint, it works by URL encoding
-    # A safe prompt prefix to guide the AI towards the desired style
-    full_prompt = f"cyberpunk noir, city of zilantia, {prompt}, cinematic, photorealistic, 4k"
-    image_url = f"https://image.pollinations.ai/prompt/{full_prompt}"
+    try:
+        # A safe prompt prefix to guide the AI towards the desired style
+        full_prompt = f"cyberpunk noir, city of zilantia, {prompt}, cinematic, photorealistic, 4k"
+        image_url = f"https://image.pollinations.ai/prompt/{full_prompt}"
 
-    # We don't need to download the image, Discord can embed directly from a URL
-    embed = discord.Embed(
-        title="Image de Zilantia",
-        description=f"Prompt : `{prompt}`",
-        color=discord.Color.purple()
-    )
-    embed.set_image(url=image_url)
-    embed.set_footer(text="Généré avec Pollinations.ai")
+        # Check if the image was generated successfully
+        # Use a short timeout as we are just checking headers
+        response = requests.head(image_url, timeout=10)
+        response.raise_for_status()
 
-    await interaction.followup.send(embed=embed)
+        # We don't need to download the image, Discord can embed directly from a URL
+        embed = discord.Embed(
+            title="Image de Zilantia",
+            description=f"Prompt : `{prompt}`",
+            color=discord.Color.purple()
+        )
+        embed.set_image(url=image_url)
+        embed.set_footer(text="Généré avec Pollinations.ai")
+
+        await interaction.followup.send(embed=embed)
+
+    except requests.exceptions.Timeout:
+        print("API Error: Request to Pollinations image API timed out.")
+        await interaction.followup.send("Le service de génération d'images a mis trop de temps à répondre. Il est peut-être surchargé.", ephemeral=True)
+    except requests.exceptions.RequestException as e:
+        print(f"API Error: Failed to connect to Pollinations image API: {e}")
+        await interaction.followup.send("Impossible de contacter le service de génération d'images. Il est peut-être temporairement hors ligne.", ephemeral=True)
 
 
 @bot.tree.command(name="interact", description="Interagir avec un PNJ ou un objet.")
