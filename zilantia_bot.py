@@ -5,6 +5,7 @@ import os
 import random
 import json
 import requests
+import sqlite3
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
@@ -147,96 +148,72 @@ class Player:
         player.mission_progress = data.get("mission_progress", {})
         return player
 
-# --- Player Data ---
-PLAYER_DATA_FILE = "player_data.json"
-player_profiles = {}
+# --- Database Connection ---
 
-def save_player_data():
-    """
-    Saves the player profiles to a JSON file.
-    Returns True on success, False on failure.
-    """
-    try:
-        data_to_save = {user_id: player.to_dict() for user_id, player in player_profiles.items()}
-        with open(PLAYER_DATA_FILE, 'w') as f:
-            json.dump(data_to_save, f, indent=4)
-        return True
-    except (IOError, OSError) as e:
-        print(f"!!! CRITICAL ERROR: Failed to save player data to {PLAYER_DATA_FILE} !!!")
-        print(f"Error details: {e}")
-        print("This is likely due to a file permissions issue in the deployment environment.")
-        return False
+DB_FILE = 'zilantia.db'
 
-def load_player_data():
-    """Loads player profiles from a JSON file."""
-    global player_profiles
-    try:
-        with open(PLAYER_DATA_FILE, 'r') as f:
-            data = json.load(f)
-            player_profiles = {int(user_id): Player.from_dict(p_data) for user_id, p_data in data.items()}
-    except FileNotFoundError:
-        player_profiles = {} # No data file yet
+def get_db_connection():
+    """Establishes a connection to the database."""
+    conn = sqlite3.connect(DB_FILE)
+    conn.row_factory = sqlite3.Row
+    return conn
 
-# --- World Data ---
-WORLD_DATA_FILE = "world_data.json"
-world_locations = {}
+# --- Data Access Functions ---
 
-def save_world_data():
-    """
-    Saves the world state to a JSON file.
-    Returns True on success, False on failure.
-    """
-    try:
-        data_to_save = {key: loc.to_dict() for key, loc in world_locations.items()}
-        with open(WORLD_DATA_FILE, 'w') as f:
-            json.dump(data_to_save, f, indent=4)
-        return True
-    except (IOError, OSError) as e:
-        print(f"!!! CRITICAL ERROR: Failed to save world data to {WORLD_DATA_FILE} !!!")
-        print(f"Error details: {e}")
-        print("This is likely due to a file permissions issue in the deployment environment.")
-        return False
+def get_player(user_id):
+    """Retrieves a player's data from the database."""
+    conn = get_db_connection()
+    player = conn.execute('SELECT * FROM players WHERE user_id = ?', (user_id,)).fetchone()
+    conn.close()
+    return player
 
-def load_world_data():
-    """Loads the world state from a JSON file, creating it if it doesn't exist."""
-    global world_locations
-    try:
-        with open(WORLD_DATA_FILE, 'r') as f:
-            data = json.load(f)
-            for key, loc_data in data.items():
-                world_locations[key] = Location(
-                    name=loc_data["name"],
-                    description=loc_data["description"],
-                    pnjs=[PNJ(name=pnj_data["name"], description=pnj_data["description"], system_prompt=pnj_data.get("system_prompt", "Tu es un PNJ dans un jeu de rôle.")) for pnj_data in loc_data.get("pnjs", [])],
-                    items=[Item(**item_data) for item_data in loc_data.get("items", [])],
-                    exits=loc_data.get("exits", {}),
-                    enemies=[Enemy(**enemy_data) for enemy_data in loc_data.get("enemies", [])]
-                )
-    except FileNotFoundError:
-        print("World data file not found, creating a new one with Zilantia GTA theme.")
-        world_locations = {
-            "quartier_pauvre": Location(
-                name="Quartier Pauvre",
-                description="Un dédale de ruelles humides et de bâtiments délabrés. L'odeur de la pauvreté et du désespoir est palpable.",
-                pnjs=[PNJ("Vieux Leo", "Un vieil homme assis sur un carton, il a tout vu.", "Tu es Leo, un vieil homme fatigué qui a vu la cruauté de la rue. Tu parles avec des phrases courtes et méfiantes.")],
-                items=[Item("Colis suspect", "Une caisse en bois qui vibre légèrement. Prêt pour la mission `/mission`?")],
-                exits={"nord": "port"}
-            ),
-            "port": Location(
-                name="Le Port de Zilantia",
-                description="Des grues rouillées se dressent vers le ciel. Les conteneurs sont une cachette parfaite pour les trafics.",
-                pnjs=[PNJ("Contact de l'Ombre", "Un homme au visage dissimulé.", "Tu es un contact du Syndicat Noir. Tu es professionnel, direct et tu ne donnes aucune information superflue. Tu ne parles que de la mission en cours.")],
-                enemies=[Enemy("Homme de main du Syndicat", 40, 8)],
-                exits={"sud": "quartier_pauvre", "est": "manoir_varlox"}
-            ),
-            "manoir_varlox": Location(
-                name="Manoir de Varlox",
-                description="Une immense bâtisse sombre qui surplombe la ville. Les ombres semblent danser sur ses murs.",
-                pnjs=[PNJ("Don Varlox", "Le Roi des Ombres, assis sur un trône d'obsidienne.", "Tu es Don Varlox, le chef impitoyable du Syndicat Noir. Tu es arrogant, tu parles avec supériorité et tu vois les autres comme des pions. Tes phrases sont menaçantes et calculatrices.")],
-                exits={"ouest": "port"}
-            )
-        }
-        save_world_data()
+def create_or_update_player(user_id, user_name, avatar_url, race, pouvoir):
+    """Creates a new player or updates an existing one."""
+    conn = get_db_connection()
+    conn.execute('''
+        INSERT INTO players (user_id, user_name, user_avatar_url, race, pouvoir, location_key)
+        VALUES (?, ?, ?, ?, ?, 'quartier_pauvre')
+        ON CONFLICT(user_id) DO UPDATE SET
+        user_name = excluded.user_name,
+        user_avatar_url = excluded.user_avatar_url,
+        race = excluded.race,
+        pouvoir = excluded.pouvoir
+    ''', (user_id, user_name, avatar_url, race, pouvoir))
+    conn.commit()
+    conn.close()
+
+def update_player_location(user_id, new_location_key):
+    """Updates a player's current location."""
+    conn = get_db_connection()
+    conn.execute('UPDATE players SET location_key = ? WHERE user_id = ?', (new_location_key, user_id))
+    conn.commit()
+    conn.close()
+
+def get_location_details(location_key):
+    """Retrieves full details for a location, including PNJs, items, etc."""
+    conn = get_db_connection()
+    location_data = {}
+
+    loc = conn.execute('SELECT * FROM locations WHERE key = ?', (location_key,)).fetchone()
+    if not loc:
+        conn.close()
+        return None
+    location_data['details'] = loc
+
+    location_data['pnjs'] = conn.execute('SELECT * FROM pnjs WHERE location_key = ?', (location_key,)).fetchall()
+    location_data['items'] = conn.execute('SELECT * FROM items WHERE location_key = ?', (location_key,)).fetchall()
+    location_data['enemies'] = conn.execute('SELECT * FROM enemies WHERE location_key = ?', (location_key,)).fetchall()
+
+    # For now, exits are static, but could be moved to the DB later
+    exits = {
+        'quartier_pauvre': {'nord': 'port'},
+        'port': {'sud': 'quartier_pauvre', 'est': 'manoir_varlox'},
+        'manoir_varlox': {'ouest': 'port'}
+    }
+    location_data['exits'] = exits.get(location_key, {})
+
+    conn.close()
+    return location_data
 
 # --- Error Handling Helper ---
 
@@ -264,265 +241,258 @@ tensions = [
 
 @bot.tree.command(name="start", description="Commence une aventure dans la Zilantia Moderne.")
 async def start(interaction: discord.Interaction):
-    """Generates a starting scenario for the player."""
+    """Starts the adventure for a player, placing them in their current location."""
     user_id = interaction.user.id
-    if user_id not in player_profiles:
+    player = get_player(user_id)
+
+    if not player:
         await interaction.response.send_message("Veuillez d'abord créer un personnage avec la commande `/profile`.")
         return
 
-    player = player_profiles[user_id]
-
-    # Randomly select a starting location
-    start_location_key = random.choice(list(world_locations.keys()))
-    player.location_key = start_location_key
-    if not save_player_data():
-        await handle_save_error(interaction)
+    location = get_location_details(player['location_key'])
+    if not location:
+        await interaction.response.send_message("Erreur : Votre emplacement actuel est invalide.", ephemeral=True)
         return
 
-    # Create the introductory message
-    location = world_locations[player.location_key]
     message = (
         f"**Bienvenue à Zilantia, {interaction.user.mention}.**\n\n"
-        f"Vous vous trouvez ici : **{location.name}**\n"
-        f"{location.description}\n"
+        f"Vous vous trouvez ici : **{location['details']['name']}**\n"
+        f"{location['details']['description']}\n"
         f"{random.choice(tensions)}\n\n"
         "Que faites-vous ? Utilisez `/scan` ou `/interact` pour explorer."
     )
-
     await interaction.response.send_message(message)
-
-class ConfirmOverwriteView(ui.View):
-    def __init__(self, user_id, race, pouvoir):
-        super().__init__(timeout=60.0)
-        self.user_id = user_id
-        self.race = race
-        self.pouvoir = pouvoir
-
-    @ui.button(label="Oui", style=discord.ButtonStyle.danger)
-    async def confirm(self, interaction: discord.Interaction, button: ui.Button):
-        embed, success = create_profile(interaction, self.user_id, self.race, self.pouvoir, overwrite=True)
-        if success:
-            await interaction.response.edit_message(content="Votre ancien profil a été écrasé. Voici votre nouvelle fiche :", embed=embed, view=None)
-        else:
-            await interaction.response.edit_message(content="La création du profil a échoué en raison d'une erreur de sauvegarde.", view=None)
-            await handle_save_error(interaction)
-        self.stop()
-
-    @ui.button(label="Non", style=discord.ButtonStyle.secondary)
-    async def cancel(self, interaction: discord.Interaction, button: ui.Button):
-        await interaction.response.send_message("Opération annulée.", ephemeral=True)
-        self.stop()
-
-def create_profile(interaction, user_id, race, pouvoir, overwrite=False):
-    """
-    Helper function to create or overwrite a profile.
-    Returns a tuple of (embed, success_boolean).
-    """
-    player = Player(
-        user_id=user_id,
-        user_name=interaction.user.name,
-        user_avatar_url=str(interaction.user.avatar.url),
-        race=race,
-        pouvoir=pouvoir
-    )
-    player_profiles[user_id] = player
-    success = save_player_data()
-
-    embed = discord.Embed(
-        title=f"Fiche de Personnage de {player.user_name}",
-        color=discord.Color.blue()
-    )
-    embed.set_thumbnail(url=player.user_avatar_url)
-    embed.add_field(name="Race", value=player.race, inline=True)
-    embed.add_field(name="Pouvoir", value=player.pouvoir, inline=True)
-    embed.add_field(name="Niveau", value=player.niveau, inline=True)
-    embed.add_field(name="Traits Uniques", value=player.traits_uniques, inline=False)
-    embed.add_field(name="Artefact", value=player.artefact, inline=False)
-
-    return embed, success
 
 @bot.tree.command(name="profile", description="Crée ou met à jour la fiche de votre personnage.")
 async def profile(interaction: discord.Interaction, race: str, pouvoir: str):
-    """Creates or updates a player's character profile."""
+    """Creates or updates a player's character profile in the database."""
     user_id = interaction.user.id
+    user_name = interaction.user.name
+    avatar_url = str(interaction.user.avatar.url)
 
-    if user_id in player_profiles:
-        view = ConfirmOverwriteView(user_id, race, pouvoir)
-        await interaction.response.send_message(
-            "Un profil existe déjà pour vous. Voulez-vous l'écraser ? Votre progression sera perdue.",
-            view=view,
-            ephemeral=True
+    try:
+        create_or_update_player(user_id, user_name, avatar_url, race, pouvoir)
+
+        # Retrieve the newly created/updated profile to display it
+        player = get_player(user_id)
+
+        embed = discord.Embed(
+            title=f"Fiche de Personnage de {player['user_name']}",
+            color=discord.Color.blue()
         )
-    else:
-        embed, success = create_profile(interaction, user_id, race, pouvoir)
-        if success:
-            await interaction.response.send_message(embed=embed)
-        else:
-            await handle_save_error(interaction)
+        embed.set_thumbnail(url=player['user_avatar_url'])
+        embed.add_field(name="Race", value=player['race'], inline=True)
+        embed.add_field(name="Pouvoir", value=player['pouvoir'], inline=True)
+        embed.add_field(name="Niveau", value=player['niveau'], inline=True)
+        embed.add_field(name="Traits Uniques", value=player['traits_uniques'], inline=False)
+        embed.add_field(name="Artefact", value=player['artefact'], inline=False)
+
+        await interaction.response.send_message(content="Votre profil a été créé/mis à jour !", embed=embed)
+
+    except sqlite3.Error as e:
+        print(f"Database error in /profile command: {e}")
+        await interaction.response.send_message("Une erreur de base de données est survenue.", ephemeral=True)
 
 @bot.tree.command(name="move", description="Déplacement précis dans le monde.")
 async def move(interaction: discord.Interaction, direction: str):
-    """Handles player movement."""
+    """Handles player movement using the database."""
     user_id = interaction.user.id
-    if user_id not in player_profiles or player_profiles[user_id].location_key is None:
+    player = get_player(user_id)
+
+    if not player or not player['location_key']:
         await interaction.response.send_message("Vous n'êtes nulle part. Utilisez `/start` pour commencer votre aventure.")
         return
 
-    player = player_profiles[user_id]
-    current_location = world_locations[player.location_key]
+    current_location = get_location_details(player['location_key'])
     direction_lower = direction.lower()
 
-    if direction_lower in current_location.exits:
-        new_location_key = current_location.exits[direction_lower]
-        current_location_key = player.location_key # Backup
-        player.location_key = new_location_key
+    if direction_lower in current_location.get('exits', {}):
+        new_location_key = current_location['exits'][direction_lower]
 
-        if not save_player_data():
-            await handle_save_error(interaction)
-            # Restore previous location to prevent inconsistent state
-            player.location_key = current_location_key
+        try:
+            update_player_location(user_id, new_location_key)
+            new_location = get_location_details(new_location_key)
+            await interaction.response.send_message(
+                f"Vous vous déplacez vers le **{direction}**.\n\n"
+                f"Vous arrivez à **{new_location['details']['name']}**.\n"
+                f"{new_location['details']['description']}"
+            )
+        except sqlite3.Error as e:
+            print(f"Database error in /move: {e}")
+            await interaction.response.send_message("Une erreur de base de données est survenue lors du déplacement.", ephemeral=True)
+    else:
+        possible_exits = ", ".join(current_location.get('exits', {}).keys())
+        await interaction.response.send_message(f"Direction invalide. Sorties possibles : {possible_exits or 'Aucune'}")
+
+# --- Admin Commands ---
+
+@bot.tree.command(name="setup", description="[Admin] Lie un lieu à un canal Discord.")
+@commands.has_permissions(administrator=True)
+async def setup(interaction: discord.Interaction, location_key: str, channel: discord.TextChannel):
+    """Links a game location to a specific Discord channel."""
+    try:
+        conn = get_db_connection()
+        # Check if the location exists
+        loc = conn.execute('SELECT 1 FROM locations WHERE key = ?', (location_key,)).fetchone()
+        if not loc:
+            await interaction.response.send_message(f"Erreur : Le lieu `{location_key}` n'existe pas dans la base de données.", ephemeral=True)
+            conn.close()
             return
 
-        new_location = world_locations[new_location_key]
-        await interaction.response.send_message(
-            f"Vous vous déplacez vers le **{direction}**.\n\n"
-            f"Vous arrivez à **{new_location.name}**.\n"
-            f"{new_location.description}"
-        )
+        conn.execute('UPDATE locations SET channel_id = ? WHERE key = ?', (channel.id, location_key))
+        conn.commit()
+        conn.close()
+        await interaction.response.send_message(f"Le lieu `{location_key}` a été lié au canal {channel.mention}.", ephemeral=True)
+
+    except sqlite3.Error as e:
+        print(f"Database error in /setup: {e}")
+        await interaction.response.send_message("Une erreur de base de données est survenue.", ephemeral=True)
+
+@setup.error
+async def setup_error(interaction: discord.Interaction, error: discord.app_commands.AppCommandError):
+    """Error handler for the setup command."""
+    if isinstance(error, discord.app_commands.MissingPermissions):
+        await interaction.response.send_message("Vous devez être administrateur pour utiliser cette commande.", ephemeral=True)
     else:
-        possible_exits = ", ".join(current_location.exits.keys())
-        await interaction.response.send_message(f"Direction invalide. Sorties possibles : {possible_exits}")
+        await interaction.response.send_message(f"Une erreur est survenue: {error}", ephemeral=True)
+
+# --- Player Commands ---
+
+@bot.tree.command(name="teleport", description="Vous déplace vers un nouveau lieu et met à jour votre visibilité.")
+async def teleport(interaction: discord.Interaction, destination_key: str):
+    """Teleports a player to a new location, managing channel permissions."""
+    user_id = interaction.user.id
+    player = get_player(user_id)
+    guild = interaction.guild
+
+    if not player:
+        await interaction.response.send_message("Vous devez d'abord avoir un personnage. Utilisez `/profile`.", ephemeral=True)
+        return
+
+    # Get current and destination location details from DB
+    conn = get_db_connection()
+    current_loc_db = conn.execute('SELECT * FROM locations WHERE key = ?', (player['location_key'],)).fetchone()
+    destination_loc_db = conn.execute('SELECT * FROM locations WHERE key = ?', (destination_key,)).fetchone()
+    conn.close()
+
+    if not destination_loc_db:
+        await interaction.response.send_message(f"Destination `{destination_key}` invalide.", ephemeral=True)
+        return
+
+    if current_loc_db['key'] == destination_loc_db['key']:
+        await interaction.response.send_message(f"Vous êtes déjà à `{destination_loc_db['name']}`.", ephemeral=True)
+        return
+
+    # Check if channels have been set up
+    if not current_loc_db['channel_id'] or not destination_loc_db['channel_id']:
+        await interaction.response.send_message("Erreur de configuration : les canaux pour les lieux actuels ou de destination ne sont pas définis. Un admin doit utiliser `/setup`.", ephemeral=True)
+        return
+
+    # Get channel objects
+    try:
+        current_channel = guild.get_channel(current_loc_db['channel_id'])
+        destination_channel = guild.get_channel(destination_loc_db['channel_id'])
+        if not current_channel or not destination_channel:
+            raise AttributeError # If a channel was deleted
+    except AttributeError:
+        await interaction.response.send_message("Erreur : Un des canaux configurés n'existe plus sur ce serveur.", ephemeral=True)
+        return
+
+    # Update database first
+    try:
+        update_player_location(user_id, destination_key)
+    except sqlite3.Error as e:
+        print(f"Database error in /teleport: {e}")
+        await interaction.response.send_message("Erreur de base de données lors de la téléportation.", ephemeral=True)
+        return
+
+    # Manage channel permissions
+    try:
+        await current_channel.set_permissions(interaction.user, read_messages=False)
+        await destination_channel.set_permissions(interaction.user, read_messages=True)
+    except discord.Forbidden:
+        await interaction.response.send_message("Erreur : Le bot n'a pas les permissions nécessaires pour gérer les canaux. Veuillez vérifier ses rôles.", ephemeral=True)
+        # Revert location change in DB
+        update_player_location(user_id, current_loc_db['key'])
+        return
+
+    await interaction.response.send_message(f"Téléportation réussie ! Vous êtes maintenant à **{destination_loc_db['name']}**. Le canal {destination_channel.mention} est maintenant visible.")
+
 
 @bot.tree.command(name="scan", description="Analyse la zone.")
 async def scan(interaction: discord.Interaction):
-    """Scans the current area."""
+    """Scans the current area using data from the database."""
     user_id = interaction.user.id
-    if user_id not in player_profiles or player_profiles[user_id].location_key is None:
+    player = get_player(user_id)
+
+    if not player or not player['location_key']:
         await interaction.response.send_message("Vous n'êtes nulle part. Utilisez `/start` pour commencer votre aventure.")
         return
 
-    player = player_profiles[user_id]
-    location = world_locations[player.location_key]
+    location = get_location_details(player['location_key'])
 
     embed = discord.Embed(
-        title=f"Scan de : {location.name}",
-        description=location.description,
+        title=f"Scan de : {location['details']['name']}",
+        description=location['details']['description'],
         color=discord.Color.green()
     )
 
-    if location.pnjs:
-        pnj_list = "\n".join([f"- {pnj.name}: {pnj.description}" for pnj in location.pnjs])
+    if location['pnjs']:
+        pnj_list = "\n".join([f"- {pnj['name']}: {pnj['description']}" for pnj in location['pnjs']])
         embed.add_field(name="PNJs présents", value=pnj_list, inline=False)
 
-    if location.items:
-        item_list = "\n".join([f"- {item.name}: {item.description}" for item in location.items])
+    if location['items']:
+        item_list = "\n".join([f"- {item['name']}: {item['description']}" for item in location['items']])
         embed.add_field(name="Objets notables", value=item_list, inline=False)
 
-    if not location.pnjs and not location.items:
+    if location['enemies']:
+        enemy_list = "\n".join([f"- {enemy['name']}" for enemy in location['enemies']])
+        embed.add_field(name="Ennemis", value=enemy_list, inline=False)
+
+    if not location['pnjs'] and not location['items'] and not location['enemies']:
         embed.add_field(name="Résultat du scan", value="La zone semble calme. Rien à signaler.", inline=False)
 
     await interaction.response.send_message(embed=embed)
 
 # --- Combat System ---
+# This can be removed or refactored later, as combat state is not persistent yet
 active_combats = {}
 
-class CombatView(ui.View):
-    def __init__(self, player, enemy, original_interaction):
-        super().__init__(timeout=180.0)
-        self.player = player
-        self.enemy = enemy
-        self.original_interaction = original_interaction
-        self.combat_log = ""
+# The rest of the combat system (CombatView) would need a larger refactor
+# to work with the database, so we will simplify it for now.
+# A full implementation would involve storing combat state in the DB.
 
-    async def update_interaction(self, interaction: discord.Interaction):
-        """Helper to update the combat message."""
-        if self.player.health <= 0 or self.enemy.health <= 0:
-            self.disable_all_items()
-            if self.player.health <= 0:
-                self.combat_log += "\n**Vous avez été vaincu...**"
-                self.player.health = 100 # Reset health
-            else:
-                self.combat_log += f"\n**Vous avez vaincu {self.enemy.name} !**"
-                # Remove enemy from the world
-                location = world_locations[self.player.location_key]
-                if location.enemies: # Avoid crash if enemy list is already empty
-                    location.enemies.pop(0)
-                    if not save_world_data():
-                        await handle_save_error(interaction)
-
-            del active_combats[self.player.user_id]
-            if not save_player_data():
-                 await handle_save_error(interaction)
-
-        embed = self.create_embed()
-        await interaction.response.edit_message(embed=embed, view=self)
-
-    def create_embed(self):
-        embed = discord.Embed(title=f"Combat: {self.player.user_name} vs. {self.enemy.name}", color=discord.Color.red())
-        embed.add_field(name="Votre Santé", value=f"{self.player.health}/100", inline=True)
-        embed.add_field(name=f"Santé de {self.enemy.name}", value=f"{self.enemy.health}", inline=True)
-        embed.add_field(name="Log de Combat", value=self.combat_log or "Le combat commence !", inline=False)
-        return embed
-
-    def enemy_turn(self):
-        """The enemy's action."""
-        self.player.health -= self.enemy.damage
-        self.combat_log += f"\n{self.enemy.name} vous attaque et vous inflige {self.enemy.damage} points de dégâts."
-
-    @ui.button(label="Attaquer", style=discord.ButtonStyle.danger)
-    async def attack(self, interaction: discord.Interaction, button: ui.Button):
-        player_damage = random.randint(10, 20)
-        self.enemy.health -= player_damage
-        self.combat_log = f"Vous attaquez {self.enemy.name} et lui infligez {player_damage} points de dégâts."
-        if self.enemy.health > 0:
-            self.enemy_turn()
-        await self.update_interaction(interaction)
-
-    @ui.button(label="Esquiver", style=discord.ButtonStyle.secondary)
-    async def dodge(self, interaction: discord.Interaction, button: ui.Button):
-        dodged = random.choice([True, False])
-        if dodged:
-            self.combat_log = "Vous esquivez l'attaque de l'ennemi !"
-        else:
-            self.combat_log = "Vous n'avez pas réussi à esquiver."
-            self.enemy_turn()
-        await self.update_interaction(interaction)
-
-    @ui.button(label="Pouvoir", style=discord.ButtonStyle.primary)
-    async def power(self, interaction: discord.Interaction, button: ui.Button):
-        power_damage = random.randint(20, 30) # Powers are stronger
-        self.enemy.health -= power_damage
-        self.combat_log = f"Vous utilisez votre pouvoir sur {self.enemy.name} pour {power_damage} points de dégâts !"
-        if self.enemy.health > 0:
-            self.enemy_turn()
-        await self.update_interaction(interaction)
-
-
-@bot.tree.command(name="fight", description="Active le mode combat.")
+@bot.tree.command(name="fight", description="Engage un combat (simplifié).")
 async def fight(interaction: discord.Interaction):
-    """Activates combat mode."""
+    """A simplified combat command."""
     user_id = interaction.user.id
-    if user_id in active_combats:
-        await interaction.response.send_message("Vous êtes déjà en combat.", ephemeral=True)
+    player = get_player(user_id)
+
+    if not player or not player['location_key']:
+        await interaction.response.send_message("Vous devez d'abord avoir un personnage et être dans le monde. Utilisez `/profile` et `/start`.")
         return
 
-    if user_id not in player_profiles or player_profiles[user_id].location_key is None:
-        await interaction.response.send_message("Vous n'êtes nulle part. Utilisez `/start` pour commencer votre aventure.", ephemeral=True)
+    location = get_location_details(player['location_key'])
+
+    if not location['enemies']:
+        await interaction.response.send_message("Il n'y a personne à combattre ici.")
         return
 
-    player = player_profiles[user_id]
-    location = world_locations[player.location_key]
+    # Simplified combat: win/loss based on a random roll
+    enemy = location['enemies'][0]
+    await interaction.response.send_message(f"Vous engagez le combat avec **{enemy['name']}** !")
 
-    if not location.enemies:
-        await interaction.response.send_message("Il n'y a personne à combattre ici.", ephemeral=True)
-        return
+    # Simulate a fight
+    player_win = random.choice([True, False])
 
-    enemy = location.enemies[0]
-    active_combats[user_id] = True
-
-    view = CombatView(player=player, enemy=enemy, original_interaction=interaction)
-    embed = view.create_embed()
-    await interaction.response.send_message(embed=embed, view=view)
+    if player_win:
+        conn = get_db_connection()
+        conn.execute('DELETE FROM enemies WHERE id = ?', (enemy['id'],))
+        conn.commit()
+        conn.close()
+        await interaction.followup.send(f"Après un combat acharné, vous avez vaincu **{enemy['name']}** !")
+    else:
+        await interaction.followup.send(f"**{enemy['name']}** vous a vaincu ! Vous battez en retraite pour panser vos plaies.")
 
 # --- AI Text Generation ---
 
@@ -591,62 +561,29 @@ async def image(interaction: discord.Interaction, prompt: str):
 
 @bot.tree.command(name="interact", description="Interagir avec un PNJ ou un objet.")
 async def interact(interaction: discord.Interaction, target: str, message: str = "Je m'approche et j'observe."):
-    """Interacts with a target, potentially for a mission."""
+    """Interacts with a target using data from the database."""
     user_id = interaction.user.id
-    if user_id not in player_profiles or player_profiles[user_id].location_key is None:
-        await interaction.response.send_message("Vous n'êtes nulle part. Utilisez `/start` pour commencer votre aventure.", ephemeral=True)
+    player = get_player(user_id)
+
+    if not player or not player['location_key']:
+        await interaction.response.send_message("Vous devez d'abord avoir un personnage. Utilisez `/profile`.", ephemeral=True)
         return
 
-    player = player_profiles[user_id]
-    location = world_locations[player.location_key]
+    location = get_location_details(player['location_key'])
     target_lower = target.lower()
 
     # --- PNJ Interaction ---
-    for pnj in location.pnjs:
-        if pnj.name.lower() == target_lower:
-            await interaction.response.defer() # Acknowledge the command, AI can be slow
-
-            # Mission-specific interaction check
-            if player.active_mission_id:
-                mission = available_missions[player.active_mission_id]
-                # End objective interaction
-                if player.mission_progress.get("package_collected") and mission.end_objective["target"].lower() == target_lower:
-                    previous_mission_id = player.active_mission_id
-                    previous_progress = player.mission_progress.copy()
-
-                    player.active_mission_id = None
-                    player.mission_progress = {}
-
-                    if save_player_data():
-                        await interaction.followup.send(f"**Mission **'{mission.name}'** terminée !** Le contact prend le colis, vous remercie d'un signe de tête et disparaît dans l'ombre.")
-                    else:
-                        player.active_mission_id = previous_mission_id
-                        player.mission_progress = previous_progress
-                        await handle_save_error(interaction)
-                    return
-
-            # Generate dynamic AI response
-            ai_response = generate_text_response(message, pnj.system_prompt)
-            await interaction.followup.send(f"**{pnj.name}**: \"{ai_response}\"")
+    for pnj in location['pnjs']:
+        if pnj['name'].lower() == target_lower:
+            await interaction.response.defer()
+            ai_response = generate_text_response(message, pnj['system_prompt'])
+            await interaction.followup.send(f"**{pnj['name']}**: \"{ai_response}\"")
             return
 
     # --- Item Interaction ---
-    for item in location.items:
-        if item.name.lower() == target_lower:
-            # Mission start objective check
-            if player.active_mission_id:
-                mission = available_missions[player.active_mission_id]
-                if not player.mission_progress.get("package_collected") and mission.start_objective["target"].lower() == target_lower:
-                    player.mission_progress["package_collected"] = True
-                    if save_player_data():
-                        await interaction.response.send_message(f"Vous avez récupéré le **{target}**. Vous devriez maintenant l'apporter au **{mission.end_objective['target']}** sur le Port.")
-                    else:
-                        player.mission_progress["package_collected"] = False # Revert state
-                        await handle_save_error(interaction)
-                    return
-
-            # Default item interaction
-            await interaction.response.send_message(f"Vous examinez **{item.name}**: {item.description}")
+    for item in location['items']:
+        if item['name'].lower() == target_lower:
+            await interaction.response.send_message(f"Vous examinez **{item['name']}**: {item['description']}")
             return
 
     await interaction.response.send_message(f"Impossible de trouver '{target}' ici.", ephemeral=True)
@@ -656,34 +593,82 @@ async def portal(interaction: discord.Interaction):
     """Attempts to open a portal."""
     await interaction.response.send_message("Vous essayez d'ouvrir un portail, mais rien ne se passe. Peut-être que le pouvoir vous manque...")
 
-@bot.tree.command(name="mission", description="Accepte ou consulte une mission.")
+def get_player_mission(user_id):
+    """Retrieves a player's active mission."""
+    conn = get_db_connection()
+    mission = conn.execute('SELECT * FROM player_missions WHERE player_user_id = ? AND status = "accepted"', (user_id,)).fetchone()
+    conn.close()
+    return mission
+
+def get_mission_details(mission_id):
+    """Retrieves details for a specific mission."""
+    conn = get_db_connection()
+    mission = conn.execute('SELECT * FROM missions WHERE id = ?', (mission_id,)).fetchone()
+    conn.close()
+    return mission
+
+def start_player_mission(user_id, mission_id):
+    """Assigns a mission to a player."""
+    conn = get_db_connection()
+    conn.execute('INSERT INTO player_missions (player_user_id, mission_id, status, progress) VALUES (?, ?, "accepted", "{}")', (user_id, mission_id))
+    conn.commit()
+    conn.close()
+
+class MissionAcceptView(discord.ui.View):
+    def __init__(self, missions, user_id):
+        super().__init__(timeout=180.0)
+        self.user_id = user_id
+
+        # Add a select menu with the available missions
+        options = [discord.SelectOption(label=m['name'], value=m['id'], description=m['description'][:100]) for m in missions]
+        self.select_menu = discord.ui.Select(placeholder="Choisissez une mission...", options=options)
+        self.select_menu.callback = self.select_callback
+        self.add_item(self.select_menu)
+
+    async def select_callback(self, interaction: discord.Interaction):
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("Ce n'est pas votre menu !", ephemeral=True)
+            return
+
+        mission_id = self.select_menu.values[0]
+        try:
+            start_player_mission(self.user_id, mission_id)
+            mission_details = get_mission_details(mission_id)
+            await interaction.response.edit_message(content=f"**Mission acceptée : {mission_details['name']}**\n> {mission_details['description']}", view=None)
+        except sqlite3.IntegrityError:
+             await interaction.response.edit_message(content="Vous avez déjà accepté cette mission ou une autre.", view=None)
+        except Exception as e:
+            print(f"Error in mission selection: {e}")
+            await interaction.response.edit_message(content="Une erreur est survenue.", view=None)
+
+@bot.tree.command(name="mission", description="Consulte ou accepte une mission.")
 async def mission(interaction: discord.Interaction):
-    """Assigns or checks mission status."""
+    """Lists and manages missions from the database."""
     user_id = interaction.user.id
-    if user_id not in player_profiles:
+    player = get_player(user_id)
+
+    if not player:
         await interaction.response.send_message("Veuillez d'abord créer un profil avec `/profile`.", ephemeral=True)
         return
 
-    player = player_profiles[user_id]
-    if player.active_mission_id:
-        current_mission = available_missions[player.active_mission_id]
-        progress = "Vous avez le colis." if player.mission_progress.get("package_collected") else "Vous devez récupérer le colis."
-        await interaction.response.send_message(f"**Mission en cours : {current_mission.name}**\n{current_mission.description}\n*Statut : {progress}*")
+    # Check for active mission
+    active_mission = get_player_mission(user_id)
+    if active_mission:
+        mission_details = get_mission_details(active_mission['mission_id'])
+        await interaction.response.send_message(f"**Mission en cours : {mission_details['name']}**\n> {mission_details['description']}")
         return
 
-    # Assign "Livraison Sombre"
-    mission_id = "livraison_sombre"
-    player.active_mission_id = mission_id
-    player.mission_progress = {"package_collected": False}
+    # List available missions in the current location
+    conn = get_db_connection()
+    available_missions = conn.execute('SELECT * FROM missions WHERE start_location_key = ?', (player['location_key'],)).fetchall()
+    conn.close()
 
-    if save_player_data():
-        assigned_mission = available_missions[mission_id]
-        await interaction.response.send_message(f"**Nouvelle mission acceptée : {assigned_mission.name}**\n{assigned_mission.description}")
-    else:
-        # Revert state
-        player.active_mission_id = None
-        player.mission_progress = {}
-        await handle_save_error(interaction)
+    if not available_missions:
+        await interaction.response.send_message("Aucune mission disponible ici pour le moment.")
+        return
+
+    view = MissionAcceptView(available_missions, user_id)
+    await interaction.response.send_message("Missions disponibles dans cette zone :", view=view)
 
 @bot.tree.command(name="event", description="Lance un évènement aléatoire.")
 async def event(interaction: discord.Interaction):
@@ -697,8 +682,12 @@ async def event(interaction: discord.Interaction):
 
 
 if __name__ == "__main__":
-    load_player_data()
-    load_world_data()
+    # The database is now the single source of truth, so we don't need to load files on startup.
+    # We just need to ensure the DB file exists.
+    if not os.path.exists(DB_FILE):
+        print(f"Database file '{DB_FILE}' not found. Please run `python3 database_setup.py` first.")
+        exit()
+
     if TOKEN is None:
         print("Error: DISCORD_TOKEN environment variable not set.")
         print("Please create a .env file and add your token, e.g., DISCORD_TOKEN=your_token_here")
