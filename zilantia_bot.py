@@ -4,6 +4,7 @@ from discord import ui
 import os
 import random
 import json
+import requests
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
@@ -45,10 +46,10 @@ class Item:
         return self.__dict__
 
 class PNJ:
-    def __init__(self, name, description, dialogue):
+    def __init__(self, name, description, system_prompt):
         self.name = name
         self.description = description
-        self.dialogue = dialogue
+        self.system_prompt = system_prompt # Personality for the AI
     def to_dict(self):
         return self.__dict__
 
@@ -206,7 +207,7 @@ def load_world_data():
                 world_locations[key] = Location(
                     name=loc_data["name"],
                     description=loc_data["description"],
-                    pnjs=[PNJ(**pnj_data) for pnj_data in loc_data.get("pnjs", [])],
+                    pnjs=[PNJ(name=pnj_data["name"], description=pnj_data["description"], system_prompt=pnj_data.get("system_prompt", "Tu es un PNJ dans un jeu de rôle.")) for pnj_data in loc_data.get("pnjs", [])],
                     items=[Item(**item_data) for item_data in loc_data.get("items", [])],
                     exits=loc_data.get("exits", {}),
                     enemies=[Enemy(**enemy_data) for enemy_data in loc_data.get("enemies", [])]
@@ -217,21 +218,21 @@ def load_world_data():
             "quartier_pauvre": Location(
                 name="Quartier Pauvre",
                 description="Un dédale de ruelles humides et de bâtiments délabrés. L'odeur de la pauvreté et du désespoir est palpable.",
-                pnjs=[PNJ("Vieux Leo", "Un vieil homme assis sur un carton, il a tout vu.", "Le Syndicat Noir... ils sont les rois ici. Fais attention à toi.")],
+                pnjs=[PNJ("Vieux Leo", "Un vieil homme assis sur un carton, il a tout vu.", "Tu es Leo, un vieil homme fatigué qui a vu la cruauté de la rue. Tu parles avec des phrases courtes et méfiantes.")],
                 items=[Item("Colis suspect", "Une caisse en bois qui vibre légèrement. Prêt pour la mission `/mission`?")],
                 exits={"nord": "port"}
             ),
             "port": Location(
                 name="Le Port de Zilantia",
                 description="Des grues rouillées se dressent vers le ciel. Les conteneurs sont une cachette parfaite pour les trafics.",
-                pnjs=[PNJ("Contact de l'Ombre", "Un homme au visage dissimulé.", "Vous avez la livraison ?")],
+                pnjs=[PNJ("Contact de l'Ombre", "Un homme au visage dissimulé.", "Tu es un contact du Syndicat Noir. Tu es professionnel, direct et tu ne donnes aucune information superflue. Tu ne parles que de la mission en cours.")],
                 enemies=[Enemy("Homme de main du Syndicat", 40, 8)],
                 exits={"sud": "quartier_pauvre", "est": "manoir_varlox"}
             ),
             "manoir_varlox": Location(
                 name="Manoir de Varlox",
                 description="Une immense bâtisse sombre qui surplombe la ville. Les ombres semblent danser sur ses murs.",
-                pnjs=[PNJ("Don Varlox", "Le Roi des Ombres, assis sur un trône d'obsidienne.", "Alors, une nouvelle souris est entrée dans mon royaume...")],
+                pnjs=[PNJ("Don Varlox", "Le Roi des Ombres, assis sur un trône d'obsidienne.", "Tu es Don Varlox, le chef impitoyable du Syndicat Noir. Tu es arrogant, tu parles avec supériorité et tu vois les autres comme des pions. Tes phrases sont menaçantes et calculatrices.")],
                 exits={"ouest": "port"}
             )
         }
@@ -523,8 +524,58 @@ async def fight(interaction: discord.Interaction):
     embed = view.create_embed()
     await interaction.response.send_message(embed=embed, view=view)
 
+# --- AI Text Generation ---
+
+def generate_text_response(prompt, system_prompt):
+    """Generates a text response using the Pollinations.ai API."""
+    url = "https://text.pollinations.ai"
+    try:
+        data = {
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": prompt}
+            ],
+            "model": "openai", # Although it says openai, it's their free model
+            "seed": random.randint(1, 999999999),
+        }
+        response = requests.post(url, json=data)
+        response.raise_for_status() # Raise an exception for bad status codes
+        # The API returns a JSON object where the response is in 'choices'[0]['message']['content']
+        return response.json()['choices'][0]['message']['content']
+    except requests.exceptions.RequestException as e:
+        print(f"Error calling Pollinations text API: {e}")
+        return "L'IA de dialogue est actuellement indisponible. Veuillez réessayer plus tard."
+    except (KeyError, IndexError) as e:
+        print(f"Error parsing Pollinations text API response: {e}")
+        print(f"Full response: {response.text}")
+        return "L'IA de dialogue a renvoyé une réponse inattendue. Veuillez réessayer plus tard."
+
+# --- AI Image Generation ---
+
+@bot.tree.command(name="image", description="Génère une image d'ambiance de Zilantia.")
+async def image(interaction: discord.Interaction, prompt: str):
+    """Generates an image using the Pollinations.ai API."""
+    await interaction.response.defer() # Acknowledge the command, image generation can be slow
+
+    # The image API doesn't have a formal endpoint, it works by URL encoding
+    # A safe prompt prefix to guide the AI towards the desired style
+    full_prompt = f"cyberpunk noir, city of zilantia, {prompt}, cinematic, photorealistic, 4k"
+    image_url = f"https://image.pollinations.ai/prompt/{full_prompt}"
+
+    # We don't need to download the image, Discord can embed directly from a URL
+    embed = discord.Embed(
+        title="Image de Zilantia",
+        description=f"Prompt : `{prompt}`",
+        color=discord.Color.purple()
+    )
+    embed.set_image(url=image_url)
+    embed.set_footer(text="Généré avec Pollinations.ai")
+
+    await interaction.followup.send(embed=embed)
+
+
 @bot.tree.command(name="interact", description="Interagir avec un PNJ ou un objet.")
-async def interact(interaction: discord.Interaction, target: str):
+async def interact(interaction: discord.Interaction, target: str, message: str = "Je m'approche et j'observe."):
     """Interacts with a target, potentially for a mission."""
     user_id = interaction.user.id
     if user_id not in player_profiles or player_profiles[user_id].location_key is None:
@@ -535,46 +586,51 @@ async def interact(interaction: discord.Interaction, target: str):
     location = world_locations[player.location_key]
     target_lower = target.lower()
 
-    # Mission Interaction Logic
-    if player.active_mission_id:
-        mission = available_missions[player.active_mission_id]
-
-        # Start objective interaction
-        if not player.mission_progress.get("package_collected") and mission.start_objective["target"].lower() == target_lower:
-            player.mission_progress["package_collected"] = True
-            if save_player_data():
-                await interaction.response.send_message(f"Vous avez récupéré le **{target}**. Vous devriez maintenant l'apporter au contact sur le Port.")
-            else:
-                player.mission_progress["package_collected"] = False # Revert state
-                await handle_save_error(interaction)
-            return
-
-        # End objective interaction
-        if player.mission_progress.get("package_collected") and mission.end_objective["target"].lower() == target_lower:
-            # Stash state in case of save failure
-            previous_mission_id = player.active_mission_id
-            previous_progress = player.mission_progress.copy()
-
-            player.active_mission_id = None
-            player.mission_progress = {}
-
-            if save_player_data():
-                await interaction.response.send_message(f"Mission **{mission.name}** terminée ! Le contact vous remercie d'un signe de tête et disparaît.")
-            else:
-                # Revert state
-                player.active_mission_id = previous_mission_id
-                player.mission_progress = previous_progress
-                await handle_save_error(interaction)
-            return
-
-    # Regular Interaction Logic
+    # --- PNJ Interaction ---
     for pnj in location.pnjs:
         if pnj.name.lower() == target_lower:
-            await interaction.response.send_message(f"**{pnj.name}**: \"{pnj.dialogue}\"")
+            await interaction.response.defer() # Acknowledge the command, AI can be slow
+
+            # Mission-specific interaction check
+            if player.active_mission_id:
+                mission = available_missions[player.active_mission_id]
+                # End objective interaction
+                if player.mission_progress.get("package_collected") and mission.end_objective["target"].lower() == target_lower:
+                    previous_mission_id = player.active_mission_id
+                    previous_progress = player.mission_progress.copy()
+
+                    player.active_mission_id = None
+                    player.mission_progress = {}
+
+                    if save_player_data():
+                        await interaction.followup.send(f"**Mission **'{mission.name}'** terminée !** Le contact prend le colis, vous remercie d'un signe de tête et disparaît dans l'ombre.")
+                    else:
+                        player.active_mission_id = previous_mission_id
+                        player.mission_progress = previous_progress
+                        await handle_save_error(interaction)
+                    return
+
+            # Generate dynamic AI response
+            ai_response = generate_text_response(message, pnj.system_prompt)
+            await interaction.followup.send(f"**{pnj.name}**: \"{ai_response}\"")
             return
 
+    # --- Item Interaction ---
     for item in location.items:
         if item.name.lower() == target_lower:
+            # Mission start objective check
+            if player.active_mission_id:
+                mission = available_missions[player.active_mission_id]
+                if not player.mission_progress.get("package_collected") and mission.start_objective["target"].lower() == target_lower:
+                    player.mission_progress["package_collected"] = True
+                    if save_player_data():
+                        await interaction.response.send_message(f"Vous avez récupéré le **{target}**. Vous devriez maintenant l'apporter au **{mission.end_objective['target']}** sur le Port.")
+                    else:
+                        player.mission_progress["package_collected"] = False # Revert state
+                        await handle_save_error(interaction)
+                    return
+
+            # Default item interaction
             await interaction.response.send_message(f"Vous examinez **{item.name}**: {item.description}")
             return
 
