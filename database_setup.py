@@ -99,6 +99,29 @@ def setup_database():
     )
     ''')
 
+    # Active Combats Table
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS active_combats (
+        player_user_id INTEGER PRIMARY KEY,
+        enemy_id INTEGER NOT NULL,
+        enemy_current_health INTEGER NOT NULL,
+        FOREIGN KEY (player_user_id) REFERENCES players(user_id),
+        FOREIGN KEY (enemy_id) REFERENCES enemies(id)
+    )
+    ''')
+
+    # Location Exits Table
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS location_exits (
+        source_location_key TEXT,
+        direction TEXT,
+        destination_location_key TEXT,
+        PRIMARY KEY (source_location_key, direction),
+        FOREIGN KEY (source_location_key) REFERENCES locations(key),
+        FOREIGN KEY (destination_location_key) REFERENCES locations(key)
+    )
+    ''')
+
     # --- Initial Data Insertion ---
 
     # Locations
@@ -135,12 +158,21 @@ def setup_database():
         ('nettoyage_rue', 'Nettoyage de Rue', 'Éliminer un petit gang qui refuse de payer Varlox dans le quartier pauvre.', '{"action": "defeat", "target": "Chef de gang rival"}', None, '{"cash": 1000, "reputation": 10}', 'quartier_pauvre'),
         ('crash_port', 'Crash sur le Port', 'Récupérer un conteneur d’artefacts sur le port avant la police.', '{"action": "interact", "target": "Conteneur"}', None, '{"item": "Artefact instable"}', 'port'),
         ('ombre_toit', 'Ombre sur le Toit', 'Espionner un politicien véreux pour Varlox.', '{"action": "scan", "target_location": "hotel_luxe"}', None, '{"cash": 750}', 'manoir_varlox'),
-        ('fuite_nocturne', 'La Fuite en Nocturne', 'Échapper à une poursuite de la police après un deal qui a mal tourné.', '{"action": "move", "from": "entrepot", "to": "tunnel_nord"}', None, '{"reputation": 15}', 'entrepot'),
-        ('tueur_ombre', 'Le Tueur d’Ombre', 'Survivre à une embuscade d’un assassin aux pouvoirs similaires à ceux de Varlox.', '{"action": "defeat", "target": "Tueur d\'Ombre"}', None, '{"pouvoir_up": 1}', 'ruelles_sombres'),
+        ('fuite_nocturne', 'La Fuite en Nocturne', 'Échapper à une poursuite de la police après un deal qui a mal tourné.', '{"action": "move", "from": "port", "to": "quartier_pauvre"}', None, '{"reputation": 15}', 'port'),
+        ('tueur_ombre', 'Le Tueur d’Ombre', 'Survivre à une embuscade d’un assassin aux pouvoirs similaires à ceux de Varlox.', '{"action": "defeat", "target": "Tueur d\'Ombre"}', None, '{"pouvoir_up": 1}', 'quartier_pauvre'),
         ('voleurs_artefacts', 'Les Voleurs d’Artefacts', 'Défendre un laboratoire secret du Syndicat contre des rivaux.', '{"action": "defend", "location": "labo_secret"}', None, '{"cash": 1500}', 'manoir_varlox'),
-        ('explosion_tunnel', 'Explosion au Tunnel Nord', 'Désamorcer une bombe magique posée par un gang rival sous la ville.', '{"action": "interact", "target": "Bombe magique"}', None, '{"reputation": 25, "cash": 500}', 'tunnel_nord')
+        ('explosion_tunnel', 'Explosion au Tunnel Nord', 'Désamorcer une bombe magique posée par un gang rival sous la ville.', '{"action": "interact", "target": "Bombe magique"}', None, '{"reputation": 25, "cash": 500}', 'manoir_varlox')
     ]
     cursor.executemany('INSERT OR IGNORE INTO missions (id, name, description, start_objective, end_objective, reward, start_location_key) VALUES (?, ?, ?, ?, ?, ?, ?)', missions_data)
+
+    # Location Exits
+    exits_data = [
+        ('quartier_pauvre', 'nord', 'port'),
+        ('port', 'sud', 'quartier_pauvre'),
+        ('port', 'est', 'manoir_varlox'),
+        ('manoir_varlox', 'ouest', 'port')
+    ]
+    cursor.executemany('INSERT OR IGNORE INTO location_exits (source_location_key, direction, destination_location_key) VALUES (?, ?, ?)', exits_data)
 
 
     conn.commit()

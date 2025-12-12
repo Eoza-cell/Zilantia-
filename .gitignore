@@ -1,0 +1,10 @@
+# SQLite database
+zilantia.db
+
+# Python virtual environment
+venv/
+__pycache__/
+
+# IDE folders
+.vscode/
+.idea/
