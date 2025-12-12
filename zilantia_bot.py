@@ -151,10 +151,20 @@ PLAYER_DATA_FILE = "player_data.json"
 player_profiles = {}
 
 def save_player_data():
-    """Saves the player profiles to a JSON file."""
-    data_to_save = {user_id: player.to_dict() for user_id, player in player_profiles.items()}
-    with open(PLAYER_DATA_FILE, 'w') as f:
-        json.dump(data_to_save, f, indent=4)
+    """
+    Saves the player profiles to a JSON file.
+    Returns True on success, False on failure.
+    """
+    try:
+        data_to_save = {user_id: player.to_dict() for user_id, player in player_profiles.items()}
+        with open(PLAYER_DATA_FILE, 'w') as f:
+            json.dump(data_to_save, f, indent=4)
+        return True
+    except (IOError, OSError) as e:
+        print(f"!!! CRITICAL ERROR: Failed to save player data to {PLAYER_DATA_FILE} !!!")
+        print(f"Error details: {e}")
+        print("This is likely due to a file permissions issue in the deployment environment.")
+        return False
 
 def load_player_data():
     """Loads player profiles from a JSON file."""
@@ -171,10 +181,20 @@ WORLD_DATA_FILE = "world_data.json"
 world_locations = {}
 
 def save_world_data():
-    """Saves the world state to a JSON file."""
-    data_to_save = {key: loc.to_dict() for key, loc in world_locations.items()}
-    with open(WORLD_DATA_FILE, 'w') as f:
-        json.dump(data_to_save, f, indent=4)
+    """
+    Saves the world state to a JSON file.
+    Returns True on success, False on failure.
+    """
+    try:
+        data_to_save = {key: loc.to_dict() for key, loc in world_locations.items()}
+        with open(WORLD_DATA_FILE, 'w') as f:
+            json.dump(data_to_save, f, indent=4)
+        return True
+    except (IOError, OSError) as e:
+        print(f"!!! CRITICAL ERROR: Failed to save world data to {WORLD_DATA_FILE} !!!")
+        print(f"Error details: {e}")
+        print("This is likely due to a file permissions issue in the deployment environment.")
+        return False
 
 def load_world_data():
     """Loads the world state from a JSON file, creating it if it doesn't exist."""
@@ -217,6 +237,22 @@ def load_world_data():
         }
         save_world_data()
 
+# --- Error Handling Helper ---
+
+async def handle_save_error(interaction: discord.Interaction):
+    """Sends a standardized ephemeral error message for save failures."""
+    error_message = (
+        "**Erreur Critique de Sauvegarde !**\n"
+        "Votre progression n'a pas pu être sauvegardée. Le bot a rencontré une erreur en essayant d'écrire sur le disque.\n\n"
+        "**Cause probable :** Le bot n'a pas les permissions nécessaires pour écrire dans son répertoire de données. "
+        "Si vous êtes l'administrateur, veuillez vérifier les permissions du système de fichiers sur la plateforme d'hébergement."
+    )
+    # Use followup if the initial response was already sent
+    if interaction.response.is_done():
+        await interaction.followup.send(error_message, ephemeral=True)
+    else:
+        await interaction.response.send_message(error_message, ephemeral=True)
+
 tensions = [
     "Un silence pesant s'installe, brusquement interrompu par le crissement de pneus non loin.",
     "Vous sentez un regard insistant sur vous, mais impossible de savoir d'où il vient.",
@@ -238,7 +274,9 @@ async def start(interaction: discord.Interaction):
     # Randomly select a starting location
     start_location_key = random.choice(list(world_locations.keys()))
     player.location_key = start_location_key
-    save_player_data()
+    if not save_player_data():
+        await handle_save_error(interaction)
+        return
 
     # Create the introductory message
     location = world_locations[player.location_key]
@@ -261,8 +299,12 @@ class ConfirmOverwriteView(ui.View):
 
     @ui.button(label="Oui", style=discord.ButtonStyle.danger)
     async def confirm(self, interaction: discord.Interaction, button: ui.Button):
-        embed = create_profile(interaction, self.user_id, self.race, self.pouvoir, overwrite=True)
-        await interaction.response.edit_message(content="Votre ancien profil a été écrasé. Voici votre nouvelle fiche :", embed=embed, view=None)
+        embed, success = create_profile(interaction, self.user_id, self.race, self.pouvoir, overwrite=True)
+        if success:
+            await interaction.response.edit_message(content="Votre ancien profil a été écrasé. Voici votre nouvelle fiche :", embed=embed, view=None)
+        else:
+            await interaction.response.edit_message(content="La création du profil a échoué en raison d'une erreur de sauvegarde.", view=None)
+            await handle_save_error(interaction)
         self.stop()
 
     @ui.button(label="Non", style=discord.ButtonStyle.secondary)
@@ -271,7 +313,10 @@ class ConfirmOverwriteView(ui.View):
         self.stop()
 
 def create_profile(interaction, user_id, race, pouvoir, overwrite=False):
-    """Helper function to create or overwrite a profile."""
+    """
+    Helper function to create or overwrite a profile.
+    Returns a tuple of (embed, success_boolean).
+    """
     player = Player(
         user_id=user_id,
         user_name=interaction.user.name,
@@ -280,7 +325,7 @@ def create_profile(interaction, user_id, race, pouvoir, overwrite=False):
         pouvoir=pouvoir
     )
     player_profiles[user_id] = player
-    save_player_data()
+    success = save_player_data()
 
     embed = discord.Embed(
         title=f"Fiche de Personnage de {player.user_name}",
@@ -293,7 +338,7 @@ def create_profile(interaction, user_id, race, pouvoir, overwrite=False):
     embed.add_field(name="Traits Uniques", value=player.traits_uniques, inline=False)
     embed.add_field(name="Artefact", value=player.artefact, inline=False)
 
-    return embed
+    return embed, success
 
 @bot.tree.command(name="profile", description="Crée ou met à jour la fiche de votre personnage.")
 async def profile(interaction: discord.Interaction, race: str, pouvoir: str):
@@ -308,8 +353,11 @@ async def profile(interaction: discord.Interaction, race: str, pouvoir: str):
             ephemeral=True
         )
     else:
-        embed = create_profile(interaction, user_id, race, pouvoir)
-        await interaction.response.send_message(embed=embed)
+        embed, success = create_profile(interaction, user_id, race, pouvoir)
+        if success:
+            await interaction.response.send_message(embed=embed)
+        else:
+            await handle_save_error(interaction)
 
 @bot.tree.command(name="move", description="Déplacement précis dans le monde.")
 async def move(interaction: discord.Interaction, direction: str):
@@ -325,8 +373,15 @@ async def move(interaction: discord.Interaction, direction: str):
 
     if direction_lower in current_location.exits:
         new_location_key = current_location.exits[direction_lower]
+        current_location_key = player.location_key # Backup
         player.location_key = new_location_key
-        save_player_data()
+
+        if not save_player_data():
+            await handle_save_error(interaction)
+            # Restore previous location to prevent inconsistent state
+            player.location_key = current_location_key
+            return
+
         new_location = world_locations[new_location_key]
         await interaction.response.send_message(
             f"Vous vous déplacez vers le **{direction}**.\n\n"
@@ -389,11 +444,14 @@ class CombatView(ui.View):
                 self.combat_log += f"\n**Vous avez vaincu {self.enemy.name} !**"
                 # Remove enemy from the world
                 location = world_locations[self.player.location_key]
-                location.enemies.pop(0)
-                save_world_data()
+                if location.enemies: # Avoid crash if enemy list is already empty
+                    location.enemies.pop(0)
+                    if not save_world_data():
+                        await handle_save_error(interaction)
 
             del active_combats[self.player.user_id]
-            save_player_data()
+            if not save_player_data():
+                 await handle_save_error(interaction)
 
         embed = self.create_embed()
         await interaction.response.edit_message(embed=embed, view=self)
@@ -484,17 +542,29 @@ async def interact(interaction: discord.Interaction, target: str):
         # Start objective interaction
         if not player.mission_progress.get("package_collected") and mission.start_objective["target"].lower() == target_lower:
             player.mission_progress["package_collected"] = True
-            save_player_data()
-            await interaction.response.send_message(f"Vous avez récupéré le **{target}**. Vous devriez maintenant l'apporter au contact sur le Port.")
+            if save_player_data():
+                await interaction.response.send_message(f"Vous avez récupéré le **{target}**. Vous devriez maintenant l'apporter au contact sur le Port.")
+            else:
+                player.mission_progress["package_collected"] = False # Revert state
+                await handle_save_error(interaction)
             return
 
         # End objective interaction
         if player.mission_progress.get("package_collected") and mission.end_objective["target"].lower() == target_lower:
+            # Stash state in case of save failure
+            previous_mission_id = player.active_mission_id
+            previous_progress = player.mission_progress.copy()
+
             player.active_mission_id = None
             player.mission_progress = {}
-            # Add a reward later
-            save_player_data()
-            await interaction.response.send_message(f"Mission **{mission.name}** terminée ! Le contact vous remercie d'un signe de tête et disparaît.")
+
+            if save_player_data():
+                await interaction.response.send_message(f"Mission **{mission.name}** terminée ! Le contact vous remercie d'un signe de tête et disparaît.")
+            else:
+                # Revert state
+                player.active_mission_id = previous_mission_id
+                player.mission_progress = previous_progress
+                await handle_save_error(interaction)
             return
 
     # Regular Interaction Logic
@@ -534,10 +604,15 @@ async def mission(interaction: discord.Interaction):
     mission_id = "livraison_sombre"
     player.active_mission_id = mission_id
     player.mission_progress = {"package_collected": False}
-    save_player_data()
-    assigned_mission = available_missions[mission_id]
 
-    await interaction.response.send_message(f"**Nouvelle mission acceptée : {assigned_mission.name}**\n{assigned_mission.description}")
+    if save_player_data():
+        assigned_mission = available_missions[mission_id]
+        await interaction.response.send_message(f"**Nouvelle mission acceptée : {assigned_mission.name}**\n{assigned_mission.description}")
+    else:
+        # Revert state
+        player.active_mission_id = None
+        player.mission_progress = {}
+        await handle_save_error(interaction)
 
 @bot.tree.command(name="event", description="Lance un évènement aléatoire.")
 async def event(interaction: discord.Interaction):
