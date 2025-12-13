@@ -154,14 +154,21 @@ def setup_database():
 
     # Missions
     missions_data = [
-        ('livraison_sombre', 'Livraison Sombre', 'Transporter une caisse qui bouge toute seule du quartier pauvre au port.', '{"action": "interact", "target": "Colis suspect"}', '{"action": "interact", "target": "Contact de l\'Ombre"}', '{"cash": 500}', 'quartier_pauvre'),
-        ('nettoyage_rue', 'Nettoyage de Rue', 'Éliminer un petit gang qui refuse de payer Varlox dans le quartier pauvre.', '{"action": "defeat", "target": "Chef de gang rival"}', None, '{"cash": 1000, "reputation": 10}', 'quartier_pauvre'),
-        ('crash_port', 'Crash sur le Port', 'Récupérer un conteneur d’artefacts sur le port avant la police.', '{"action": "interact", "target": "Conteneur"}', None, '{"item": "Artefact instable"}', 'port'),
-        ('ombre_toit', 'Ombre sur le Toit', 'Espionner un politicien véreux pour Varlox.', '{"action": "scan", "target_location": "hotel_luxe"}', None, '{"cash": 750}', 'manoir_varlox'),
-        ('fuite_nocturne', 'La Fuite en Nocturne', 'Échapper à une poursuite de la police après un deal qui a mal tourné.', '{"action": "move", "from": "port", "to": "quartier_pauvre"}', None, '{"reputation": 15}', 'port'),
-        ('tueur_ombre', 'Le Tueur d’Ombre', 'Survivre à une embuscade d’un assassin aux pouvoirs similaires à ceux de Varlox.', '{"action": "defeat", "target": "Tueur d\'Ombre"}', None, '{"pouvoir_up": 1}', 'quartier_pauvre'),
-        ('voleurs_artefacts', 'Les Voleurs d’Artefacts', 'Défendre un laboratoire secret du Syndicat contre des rivaux.', '{"action": "defend", "location": "labo_secret"}', None, '{"cash": 1500}', 'manoir_varlox'),
-        ('explosion_tunnel', 'Explosion au Tunnel Nord', 'Désamorcer une bombe magique posée par un gang rival sous la ville.', '{"action": "interact", "target": "Bombe magique"}', None, '{"reputation": 25, "cash": 500}', 'manoir_varlox')
+        # --- QUARTIER PAUVRE ---
+        ('livraison_sombre', 'Livraison Sombre', 'Un colis suspect doit être livré à un contact sur le port. Discrétion requise.', '{"action": "interact", "target": "Colis suspect"}', '{"action": "interact", "target": "Contact de l\'Ombre"}', '{"cash": 500}', 'quartier_pauvre'),
+        ('nettoyage_rue', 'Nettoyage de Rue', 'Un petit gang local refuse de payer sa dette au Syndicat. Faites-leur comprendre leur erreur.', '{"action": "defeat", "target": "Chef de gang rival"}', None, '{"cash": 1000, "reputation": 10}', 'quartier_pauvre'),
+        ('tueur_ombre', 'Le Tueur d’Ombre', 'Un assassin avec un pouvoir d\'ombre a été envoyé pour vous éliminer. Survivez à l\'embuscade.', '{"action": "defeat", "target": "Tueur d\'Ombre"}', None, '{"pouvoir_up": 1}', 'quartier_pauvre'),
+
+        # --- PORT ---
+        ('crash_port', 'Crash sur le Port', 'Un conteneur rempli d\'artefacts volés est sur les quais. Récupérez-le avant l\'arrivée de la police.', '{"action": "interact", "target": "Conteneur"}', None, '{"item": "Artefact instable"}', 'port'),
+        ('fuite_nocturne', 'La Fuite en Nocturne', 'Un deal a mal tourné. Échappez à la police et retournez au quartier pauvre.', '{"action": "move", "from": "port", "to": "quartier_pauvre"}', None, '{"reputation": 15}', 'port'),
+        ('sabotage_cargo', 'Sabotage de Cargo', 'Un concurrent de Varlox attend une livraison d\'armes importante. Sabotez sa marchandise.', '{"action": "interact", "target": "Grue de chargement"}', None, '{"cash": 1200, "reputation": 5}', 'port'),
+
+        # --- MANOIR DE VARLOX ---
+        ('ombre_toit', 'Ombre sur le Toit', 'Varlox veut des informations sur un politicien. Infiltrez-vous dans un hôtel de luxe et espionnez-le.', '{"action": "scan", "target_location": "hotel_luxe"}', None, '{"cash": 750}', 'manoir_varlox'),
+        ('voleurs_artefacts', 'Les Voleurs d’Artefacts', 'Défendez le laboratoire secret du manoir contre une incursion d\'un gang rival.', '{"action": "defend", "location": "labo_secret"}', None, '{"cash": 1500}', 'manoir_varlox'),
+        ('extraction_donnees', 'Extraction de Données', 'Récupérez des informations cruciales sur les opérations policières depuis un terminal sécurisé.', '{"action": "interact", "target": "Terminal de données"}', None, '{"reputation": 20}', 'manoir_varlox'),
+        ('explosion_tunnel', 'Explosion au Tunnel Nord', 'Un gang rival a piégé un tunnel stratégique. Désamorcez la bombe avant qu\'elle n\'explose.', '{"action": "interact", "target": "Bombe magique"}', None, '{"reputation": 25, "cash": 500}', 'manoir_varlox')
     ]
     cursor.executemany('INSERT OR IGNORE INTO missions (id, name, description, start_objective, end_objective, reward, start_location_key) VALUES (?, ?, ?, ?, ?, ?, ?)', missions_data)
 

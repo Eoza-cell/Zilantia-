@@ -18,6 +18,7 @@ TOKEN = os.getenv("DISCORD_TOKEN")
 # Set up the bot with necessary intents
 intents = discord.Intents.default()
 intents.members = True # Required to access member information
+intents.message_content = True # Required for message content access
 
 bot = commands.Bot(command_prefix='/', intents=intents)
 
