@@ -173,15 +173,18 @@ async def progresser(interaction: discord.Interaction):
     await interaction.response.send_message(message)
 
 @bot.tree.command(name="fonder", description="Fonde un nouveau territoire.")
-async def fonder(interaction: discord.Interaction, type_territoire: str, nom: str):
+@discord.app_commands.choices(type_territoire=[
+    discord.app_commands.Choice(name='Village', value='village'),
+    discord.app_commands.Choice(name='Ville', value='ville'),
+    discord.app_commands.Choice(name='Cité', value='cité'),
+    discord.app_commands.Choice(name='Royaume', value='royaume'),
+    discord.app_commands.Choice(name='Empire', value='empire'),
+])
+async def fonder(interaction: discord.Interaction, type_territoire: discord.app_commands.Choice[str], nom: str):
     user_id = interaction.user.id
-    valid_types = ["village", "ville", "cité", "royaume", "empire"]
-    if type_territoire.lower() not in valid_types:
-        await interaction.response.send_message(f"Type invalide. Valides : {', '.join(valid_types)}", ephemeral=True)
-        return
     create_player_if_not_exists(user_id, interaction.user.name, str(interaction.user.avatar.url) if interaction.user.avatar else '')
-    create_territory(nom, type_territoire.lower(), user_id)
-    await interaction.response.send_message(f"Félicitations ! Vous avez fondé le **{type_territoire}** de **{nom}**.")
+    create_territory(nom, type_territoire.value, user_id)
+    await interaction.response.send_message(f"Félicitations ! Vous avez fondé le **{type_territoire.name}** de **{nom}**.")
 
 @bot.tree.command(name="territoire", description="Affiche les informations de vos territoires.")
 async def territoire(interaction: discord.Interaction):
