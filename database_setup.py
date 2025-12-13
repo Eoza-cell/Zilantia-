@@ -2,13 +2,24 @@ import sqlite3
 
 def setup_database():
     """
-    Sets up the SQLite database, creating tables for the Zilantia world.
-    This function should be run once to initialize the database.
+    Sets up the SQLite database for the "Ère des Arcanes" world.
+    This function replaces the old Zilantia schema and populates the database with initial data.
     """
-    conn = sqlite3.connect('zilantia.db')
+    conn = sqlite3.connect('arcanes.db')
     cursor = conn.cursor()
 
-    # --- Create Tables ---
+    # --- Drop Old Tables (to ensure a clean slate) ---
+    cursor.execute("DROP TABLE IF EXISTS players")
+    cursor.execute("DROP TABLE IF EXISTS player_missions")
+    cursor.execute("DROP TABLE IF EXISTS locations")
+    cursor.execute("DROP TABLE IF EXISTS pnjs")
+    cursor.execute("DROP TABLE IF EXISTS items")
+    cursor.execute("DROP TABLE IF EXISTS enemies")
+    cursor.execute("DROP TABLE IF EXISTS missions")
+    cursor.execute("DROP TABLE IF EXISTS active_combats")
+    cursor.execute("DROP TABLE IF EXISTS location_exits")
+
+    # --- Create New Tables for "Ère des Arcanes" ---
 
     # Players Table
     cursor.execute('''
@@ -16,175 +27,71 @@ def setup_database():
         user_id INTEGER PRIMARY KEY,
         user_name TEXT NOT NULL,
         user_avatar_url TEXT,
-        race TEXT,
-        pouvoir TEXT,
-        niveau INTEGER DEFAULT 1,
-        health INTEGER DEFAULT 100,
-        traits_uniques TEXT DEFAULT 'Aucun pour le moment.',
-        artefact TEXT DEFAULT 'Aucun pour le moment.',
-        location_key TEXT,
-        FOREIGN KEY (location_key) REFERENCES locations(key)
+        rang TEXT DEFAULT 'F',
+        pp INTEGER DEFAULT 0, -- Points de Puissance
+        luxium INTEGER DEFAULT 100,
+        ss_validated BOOLEAN DEFAULT FALSE
     )
     ''')
 
-    # Player Missions (Junction Table)
+    # Territories Table
     cursor.execute('''
-    CREATE TABLE IF NOT EXISTS player_missions (
-        player_user_id INTEGER,
-        mission_id TEXT,
-        status TEXT, -- e.g., 'accepted', 'completed'
-        progress TEXT, -- JSON string for complex progress
-        PRIMARY KEY (player_user_id, mission_id),
-        FOREIGN KEY (player_user_id) REFERENCES players(user_id),
-        FOREIGN KEY (mission_id) REFERENCES missions(id)
-    )
-    ''')
-
-    # Locations Table
-    cursor.execute('''
-    CREATE TABLE IF NOT EXISTS locations (
-        key TEXT PRIMARY KEY,
+    CREATE TABLE IF NOT EXISTS territories (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL,
-        description TEXT NOT NULL,
-        channel_id INTEGER
+        type TEXT NOT NULL, -- Village, Ville, Cité, Royaume, Empire
+        owner_id INTEGER NOT NULL,
+        population INTEGER DEFAULT 10,
+        loyalty INTEGER DEFAULT 75, -- out of 100
+        army_level INTEGER DEFAULT 1,
+        luxium_balance INTEGER DEFAULT 0,
+        creation_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (owner_id) REFERENCES players(user_id)
     )
     ''')
 
     # PNJ Table
     cursor.execute('''
-    CREATE TABLE IF NOT EXISTS pnjs (
+    CREATE TABLE IF NOT EXISTS pnjs_dynamiques (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL,
-        description TEXT NOT NULL,
-        system_prompt TEXT,
-        location_key TEXT,
-        FOREIGN KEY (location_key) REFERENCES locations(key)
+        role TEXT,
+        loyalty INTEGER,
+        hostility INTEGER,
+        territory_id INTEGER,
+        FOREIGN KEY (territory_id) REFERENCES territories(id)
     )
     ''')
 
-    # Items Table
+    # Armies Table (Simplified for now)
     cursor.execute('''
-    CREATE TABLE IF NOT EXISTS items (
+    CREATE TABLE IF NOT EXISTS armies (
+        territory_id INTEGER PRIMARY KEY,
+        power INTEGER,
+        FOREIGN KEY (territory_id) REFERENCES territories(id)
+    )
+    ''')
+
+    # Artefacts Table
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS artefacts (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL,
-        description TEXT,
-        location_key TEXT,
-        FOREIGN KEY (location_key) REFERENCES locations(key)
+        rarity TEXT,
+        effect TEXT,
+        owner_id INTEGER,
+        FOREIGN KEY (owner_id) REFERENCES players(user_id)
     )
     ''')
 
-    # Enemies Table
-    cursor.execute('''
-    CREATE TABLE IF NOT EXISTS enemies (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL,
-        health INTEGER,
-        damage INTEGER,
-        location_key TEXT,
-        FOREIGN KEY (location_key) REFERENCES locations(key)
-    )
-    ''')
-
-    # Missions Table
-    cursor.execute('''
-    CREATE TABLE IF NOT EXISTS missions (
-        id TEXT PRIMARY KEY,
-        name TEXT NOT NULL,
-        description TEXT,
-        start_objective TEXT, -- e.g., {"action": "interact", "target": "Colis suspect"}
-        end_objective TEXT,
-        reward TEXT,
-        start_location_key TEXT,
-        FOREIGN KEY (start_location_key) REFERENCES locations(key)
-    )
-    ''')
-
-    # Active Combats Table
-    cursor.execute('''
-    CREATE TABLE IF NOT EXISTS active_combats (
-        player_user_id INTEGER PRIMARY KEY,
-        enemy_id INTEGER NOT NULL,
-        enemy_current_health INTEGER NOT NULL,
-        FOREIGN KEY (player_user_id) REFERENCES players(user_id),
-        FOREIGN KEY (enemy_id) REFERENCES enemies(id)
-    )
-    ''')
-
-    # Location Exits Table
-    cursor.execute('''
-    CREATE TABLE IF NOT EXISTS location_exits (
-        source_location_key TEXT,
-        direction TEXT,
-        destination_location_key TEXT,
-        PRIMARY KEY (source_location_key, direction),
-        FOREIGN KEY (source_location_key) REFERENCES locations(key),
-        FOREIGN KEY (destination_location_key) REFERENCES locations(key)
-    )
-    ''')
-
-    # --- Initial Data Insertion ---
-
-    # Locations
-    locations_data = [
-        ('quartier_pauvre', 'Quartier Pauvre', "Un dédale de ruelles humides et de bâtiments délabrés. L'odeur de la pauvreté et du désespoir est palpable.", None),
-        ('port', 'Le Port de Zilantia', "Des grues rouillées se dressent vers le ciel. Les conteneurs sont une cachette parfaite pour les trafics.", None),
-        ('manoir_varlox', "Manoir de Varlox", "Une immense bâtisse sombre qui surplombe la ville. Les ombres semblent danser sur ses murs.", None)
-    ]
-    cursor.executemany('INSERT OR IGNORE INTO locations (key, name, description, channel_id) VALUES (?, ?, ?, ?)', locations_data)
-
-    # PNJs
-    pnjs_data = [
-        ('Vieux Leo', 'Un vieil homme assis sur un carton, il a tout vu.', "Tu es Leo, un vieil homme fatigué qui a vu la cruauté de la rue. Tu parles avec des phrases courtes et méfiantes.", 'quartier_pauvre'),
-        ("Contact de l'Ombre", "Un homme au visage dissimulé.", "Tu es un contact du Syndicat Noir. Tu es professionnel, direct et tu ne donnes aucune information superflue. Tu ne parles que de la mission en cours.", 'port'),
-        ('Don Varlox', "Le Roi des Ombres, assis sur un trône d'obsidienne.", "Tu es Don Varlox, le chef impitoyable du Syndicat Noir. Tu es arrogant, tu parles avec supériorité et tu vois les autres comme des pions. Tes phrases sont menaçantes et calculatrices.", 'manoir_varlox')
-    ]
-    cursor.executemany('INSERT OR IGNORE INTO pnjs (name, description, system_prompt, location_key) VALUES (?, ?, ?, ?)', pnjs_data)
-
-    # Items
-    items_data = [
-        ('Colis suspect', 'Une caisse en bois qui vibre légèrement. Prêt pour la mission `Livraison Sombre`?', 'quartier_pauvre')
-    ]
-    cursor.executemany('INSERT OR IGNORE INTO items (name, description, location_key) VALUES (?, ?, ?)', items_data)
-
-    # Enemies
-    enemies_data = [
-        ('Homme de main du Syndicat', 40, 8, 'port')
-    ]
-    cursor.executemany('INSERT OR IGNORE INTO enemies (name, health, damage, location_key) VALUES (?, ?, ?, ?)', enemies_data)
-
-    # Missions
-    missions_data = [
-        # --- QUARTIER PAUVRE ---
-        ('livraison_sombre', 'Livraison Sombre', 'Un colis suspect doit être livré à un contact sur le port. Discrétion requise.', '{"action": "interact", "target": "Colis suspect"}', '{"action": "interact", "target": "Contact de l\'Ombre"}', '{"cash": 500}', 'quartier_pauvre'),
-        ('nettoyage_rue', 'Nettoyage de Rue', 'Un petit gang local refuse de payer sa dette au Syndicat. Faites-leur comprendre leur erreur.', '{"action": "defeat", "target": "Chef de gang rival"}', None, '{"cash": 1000, "reputation": 10}', 'quartier_pauvre'),
-        ('tueur_ombre', 'Le Tueur d’Ombre', 'Un assassin avec un pouvoir d\'ombre a été envoyé pour vous éliminer. Survivez à l\'embuscade.', '{"action": "defeat", "target": "Tueur d\'Ombre"}', None, '{"pouvoir_up": 1}', 'quartier_pauvre'),
-
-        # --- PORT ---
-        ('crash_port', 'Crash sur le Port', 'Un conteneur rempli d\'artefacts volés est sur les quais. Récupérez-le avant l\'arrivée de la police.', '{"action": "interact", "target": "Conteneur"}', None, '{"item": "Artefact instable"}', 'port'),
-        ('fuite_nocturne', 'La Fuite en Nocturne', 'Un deal a mal tourné. Échappez à la police et retournez au quartier pauvre.', '{"action": "move", "from": "port", "to": "quartier_pauvre"}', None, '{"reputation": 15}', 'port'),
-        ('sabotage_cargo', 'Sabotage de Cargo', 'Un concurrent de Varlox attend une livraison d\'armes importante. Sabotez sa marchandise.', '{"action": "interact", "target": "Grue de chargement"}', None, '{"cash": 1200, "reputation": 5}', 'port'),
-
-        # --- MANOIR DE VARLOX ---
-        ('ombre_toit', 'Ombre sur le Toit', 'Varlox veut des informations sur un politicien. Infiltrez-vous dans un hôtel de luxe et espionnez-le.', '{"action": "scan", "target_location": "hotel_luxe"}', None, '{"cash": 750}', 'manoir_varlox'),
-        ('voleurs_artefacts', 'Les Voleurs d’Artefacts', 'Défendez le laboratoire secret du manoir contre une incursion d\'un gang rival.', '{"action": "defend", "location": "labo_secret"}', None, '{"cash": 1500}', 'manoir_varlox'),
-        ('extraction_donnees', 'Extraction de Données', 'Récupérez des informations cruciales sur les opérations policières depuis un terminal sécurisé.', '{"action": "interact", "target": "Terminal de données"}', None, '{"reputation": 20}', 'manoir_varlox'),
-        ('explosion_tunnel', 'Explosion au Tunnel Nord', 'Un gang rival a piégé un tunnel stratégique. Désamorcez la bombe avant qu\'elle n\'explose.', '{"action": "interact", "target": "Bombe magique"}', None, '{"reputation": 25, "cash": 500}', 'manoir_varlox')
-    ]
-    cursor.executemany('INSERT OR IGNORE INTO missions (id, name, description, start_objective, end_objective, reward, start_location_key) VALUES (?, ?, ?, ?, ?, ?, ?)', missions_data)
-
-    # Location Exits
-    exits_data = [
-        ('quartier_pauvre', 'nord', 'port'),
-        ('port', 'sud', 'quartier_pauvre'),
-        ('port', 'est', 'manoir_varlox'),
-        ('manoir_varlox', 'ouest', 'port')
-    ]
-    cursor.executemany('INSERT OR IGNORE INTO location_exits (source_location_key, direction, destination_location_key) VALUES (?, ?, ?)', exits_data)
-
+    # --- Initial Data Insertion (Optional, for testing) ---
+    # You can add initial players or artefacts here if needed for testing.
+    # For example:
+    # cursor.execute("INSERT INTO players (user_id, user_name) VALUES (123456789, 'TestUser')")
 
     conn.commit()
     conn.close()
-    print("Database `zilantia.db` has been set up successfully.")
+    print("Database `arcanes.db` has been set up for 'Ère des Arcanes'.")
 
 if __name__ == '__main__':
     setup_database()
