@@ -2,6 +2,7 @@ import discord
 from discord.ext import commands
 from discord import app_commands, ui
 from .utils.db_helpers import get_active_character, get_character_territory
+from .utils.views import CreateCharacterView
 
 class MenuView(ui.View):
     def __init__(self, territory_data, character_data):
@@ -36,7 +37,12 @@ class MenuCog(commands.Cog):
     async def menu(self, interaction: discord.Interaction):
         active_character = get_active_character(interaction.user.id)
         if not active_character:
-            await interaction.response.send_message("Vous n'avez pas de personnage actif.", ephemeral=True)
+            view = CreateCharacterView()
+            await interaction.response.send_message(
+                "Vous devez d'abord créer un personnage pour accéder au menu.",
+                view=view,
+                ephemeral=True
+            )
             return
 
         territory = get_character_territory(active_character['id'])
