@@ -36,7 +36,7 @@ class MenuCog(commands.Cog):
     async def menu(self, interaction: discord.Interaction):
         active_character = get_active_character(interaction.user.id)
         if not active_character:
-            await interaction.response.send_message("Vous n'avez pas de personnage actif.", ephemeral=True)
+            await interaction.response.send_message("Vous n'avez pas de personnage actif. Utilisez `/start` pour créer votre premier personnage.", ephemeral=True)
             return
 
         territory = get_character_territory(active_character['id'])

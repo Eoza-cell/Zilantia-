@@ -8,7 +8,30 @@ class CharacterCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    character_group = app_commands.Group(name="character", description="Gérez vos personnages dans l'Ère des Arcanes.")
+    @app_commands.command(name="start", description="Commencez l'aventure et créez votre premier personnage.")
+    @app_commands.describe(nom="Le nom de votre premier personnage.")
+    async def start(self, interaction: discord.Interaction, nom: str):
+        player = get_player_by_discord_id(interaction.user.id)
+        if not player:
+            player = create_player(interaction.user.id, interaction.user.name)
+
+        characters = get_player_characters(player['id'])
+        if characters:
+            await interaction.response.send_message("Vous avez déjà commencé votre aventure ! Utilisez `/character create` pour créer d'autres personnages.", ephemeral=True)
+            return
+
+        conn = sqlite3.connect('arcanes.db')
+        cursor = conn.cursor()
+        cursor.execute("INSERT INTO characters (player_id, name) VALUES (?, ?)", (player['id'], nom))
+        new_character_id = cursor.lastrowid
+
+        cursor.execute("UPDATE players SET active_character_id = ? WHERE id = ?", (new_character_id, player['id']))
+        conn.commit()
+        conn.close()
+
+        await interaction.response.send_message(f"Bienvenue dans l'Ère des Arcanes ! Votre premier personnage, **{nom}**, a été créé et est maintenant actif. Utilisez `/profile` pour le voir.")
+
+    character_group = app_commands.Group(name="character", description="Gérez vos personnages secondaires.")
 
     @character_group.command(name="create", description="Crée un nouveau personnage.")
     async def create(self, interaction: discord.Interaction, nom: str):
@@ -101,11 +124,11 @@ class CharacterCog(commands.Cog):
         embed = discord.Embed(title=f"Personnages de {interaction.user.name}", description=description, color=discord.Color.dark_green())
         await interaction.response.send_message(embed=embed)
 
-    @character_group.command(name="profile", description="Affiche le profil de votre personnage actif.")
+    @app_commands.command(name="profile", description="Affiche le profil de votre personnage actif.")
     async def profile(self, interaction: discord.Interaction):
         character = get_active_character(interaction.user.id)
         if not character:
-            await interaction.response.send_message("Vous n'avez pas de personnage actif.", ephemeral=True)
+            await interaction.response.send_message("Vous n'avez pas de personnage actif. Utilisez `/start` pour en créer un.", ephemeral=True)
             return
 
         embed = discord.Embed(title=f"Profil de {character['name']}", color=discord.Color.dark_purple())
