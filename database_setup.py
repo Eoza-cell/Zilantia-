@@ -2,7 +2,7 @@ import sqlite3
 
 def setup_database():
     """
-    Sets up the SQLite database for the "Ère des Arcanes" world with a multi-character architecture.
+    Sets up the SQLite database for the "Zilantia" world with a multi-character architecture.
     """
     conn = sqlite3.connect('arcanes.db')
     cursor = conn.cursor()
@@ -14,6 +14,8 @@ def setup_database():
     cursor.execute("DROP TABLE IF EXISTS pnjs_dynamiques")
     cursor.execute("DROP TABLE IF EXISTS territories")
     cursor.execute("DROP TABLE IF EXISTS characters")
+    cursor.execute("DROP TABLE IF EXISTS origins")
+    cursor.execute("DROP TABLE IF EXISTS factions")
     cursor.execute("DROP TABLE IF EXISTS players")
 
     # --- Create New Tables ---
@@ -29,22 +31,41 @@ def setup_database():
     )
     ''')
 
-    # 2. Characters Table (Represents an in-game character, linked to a Player)
+    # 2. Factions Table
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS factions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL UNIQUE
+    )
+    ''')
+
+    # 3. Origins Table
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS origins (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL UNIQUE
+    )
+    ''')
+
+    # 4. Characters Table (Represents an in-game character, linked to a Player, Origin, and Faction)
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS characters (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         player_id INTEGER NOT NULL,
         name TEXT NOT NULL,
-        rang TEXT DEFAULT 'F',
-        pp INTEGER DEFAULT 0,
+        level INTEGER DEFAULT 1,
+        xp INTEGER DEFAULT 0,
         luxium INTEGER DEFAULT 100,
-        ss_validated BOOLEAN DEFAULT FALSE,
+        origin_id INTEGER NOT NULL,
+        faction_id INTEGER, -- Can be NULL until a faction is chosen
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (player_id) REFERENCES players(id) ON DELETE CASCADE
+        FOREIGN KEY (player_id) REFERENCES players(id) ON DELETE CASCADE,
+        FOREIGN KEY (origin_id) REFERENCES origins(id),
+        FOREIGN KEY (faction_id) REFERENCES factions(id) ON DELETE SET NULL
     )
     ''')
 
-    # 3. Territories Table (Owned by a Character)
+    # 5. Territories Table (Owned by a Character)
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS territories (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -59,7 +80,7 @@ def setup_database():
     )
     ''')
 
-    # 4. PNJ Table (Linked to a Territory)
+    # 6. PNJ Table (Linked to a Territory)
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS pnjs_dynamiques (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -72,7 +93,7 @@ def setup_database():
     )
     ''')
 
-    # 5. Artefacts Table (Owned by a Character)
+    # 7. Artefacts Table (Owned by a Character)
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS artefacts (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -84,7 +105,7 @@ def setup_database():
     )
     ''')
 
-    # --- World Events Table ---
+    # 8. World Events Table
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS world_events (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -97,9 +118,24 @@ def setup_database():
     )
     ''')
 
+    # --- Populate Initial Data ---
+
+    # Populate Factions
+    factions = ['Astralyon', 'Emberfall', 'Obsidienne', 'Lyr']
+    cursor.executemany("INSERT INTO factions (name) VALUES (?)", [(f,) for f in factions])
+
+    # Populate Origins
+    origins = [
+        'Arcaniste', 'Enchanteur', 'Occultiste', 'Prophète',
+        'Guerrier', 'Berserker', 'Chevalier', 'Gladiateur',
+        'Ombre', 'Assassin', 'Rôdeur', 'Espion'
+    ]
+    cursor.executemany("INSERT INTO origins (name) VALUES (?)", [(o,) for o in origins])
+
+
     conn.commit()
     conn.close()
-    print("Database `arcanes.db` has been set up with the new multi-character architecture.")
+    print("Database `arcanes.db` has been set up for Zilantia.")
 
 if __name__ == '__main__':
     setup_database()

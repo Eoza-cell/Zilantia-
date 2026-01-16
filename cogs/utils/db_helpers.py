@@ -25,11 +25,13 @@ def create_player(discord_id: int, discord_name: str):
 
 # --- Character Helpers ---
 def get_active_character(discord_id: int):
-    """Fetches the active character for a Discord user."""
+    """Fetches the active character for a Discord user, including their origin name."""
     conn = get_db_connection()
     character = conn.execute("""
-        SELECT c.* FROM characters c
+        SELECT c.*, o.name as origin_name
+        FROM characters c
         JOIN players p ON c.player_id = p.id
+        JOIN origins o ON c.origin_id = o.id
         WHERE p.user_id = ? AND p.active_character_id = c.id
     """, (discord_id,)).fetchone()
     conn.close()
@@ -55,6 +57,13 @@ def get_player_characters(player_id: int):
     characters = conn.execute("SELECT * FROM characters WHERE player_id = ?", (player_id,)).fetchall()
     conn.close()
     return characters
+
+def get_all_origins():
+    """Fetches all available origins from the database."""
+    conn = get_db_connection()
+    origins = conn.execute("SELECT * FROM origins ORDER BY name").fetchall()
+    conn.close()
+    return origins
 
 # --- Territory Helpers ---
 def get_territory_by_name_for_character(character_id: int, name: str):
