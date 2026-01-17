@@ -10,10 +10,11 @@ class CharacterCog(commands.Cog):
 
     # --- UI View for Origin Selection ---
     class OriginSelectionView(discord.ui.View):
-        def __init__(self, player_id: int, character_name: str):
+        def __init__(self, player_id: int, character_name: str, set_as_active: bool = True):
             super().__init__(timeout=180)
             self.player_id = player_id
             self.character_name = character_name
+            self.set_as_active = set_as_active
             self.add_item(self.OriginSelect())
 
         class OriginSelect(discord.ui.Select):
@@ -44,10 +45,12 @@ class CharacterCog(commands.Cog):
                     (player_id, character_name, origin_id)
                 )
                 new_character_id = cursor.lastrowid
-                cursor.execute(
-                    "UPDATE players SET active_character_id = ? WHERE id = ?",
-                    (new_character_id, player_id)
-                )
+
+                if self.view.set_as_active:
+                    cursor.execute(
+                        "UPDATE players SET active_character_id = ? WHERE id = ?",
+                        (new_character_id, player_id)
+                    )
                 conn.commit()
                 conn.close()
 
@@ -58,7 +61,7 @@ class CharacterCog(commands.Cog):
                     item.disabled = True
 
                 await interaction.response.edit_message(
-                    content=f"Bienvenue dans Zilantia ! Votre personnage **{character_name}** a été créé avec l'origine **{selected_label}**. Utilisez `/profile` pour le voir.",
+                    content=f"Votre personnage **{character_name}** a été créé avec l'origine **{selected_label}**. Utilisez `/profile` pour le voir.",
                     view=self.view
                 )
 
@@ -74,7 +77,7 @@ class CharacterCog(commands.Cog):
             await interaction.response.send_message("Vous avez déjà un personnage. Utilisez `/character create` pour en créer un autre.", ephemeral=True)
             return
 
-        view = self.OriginSelectionView(player_id=player['id'], character_name=nom)
+        view = self.OriginSelectionView(player_id=player['id'], character_name=nom, set_as_active=True)
         await interaction.response.send_message("Votre voyage commence. Choisissez l'origine de votre personnage :", view=view, ephemeral=True)
 
     character_group = app_commands.Group(name="character", description="Gérez vos personnages secondaires.")
@@ -89,17 +92,11 @@ class CharacterCog(commands.Cog):
             await interaction.response.send_message(f"Vous avez déjà un personnage nommé **{nom}**.", ephemeral=True)
             return
 
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute("INSERT INTO characters (player_id, name) VALUES (?, ?)", (player['id'], nom))
-        new_character_id = cursor.lastrowid
+        # Determine if the new character should be set as active
+        should_set_active = not bool(player['active_character_id'])
 
-        if not player['active_character_id']:
-            cursor.execute("UPDATE players SET active_character_id = ? WHERE id = ?", (new_character_id, player['id']))
-
-        conn.commit()
-        conn.close()
-        await interaction.response.send_message(f"Votre personnage **{nom}** a été créé.")
+        view = self.OriginSelectionView(player_id=player['id'], character_name=nom, set_as_active=should_set_active)
+        await interaction.response.send_message("Choisissez l'origine de votre nouveau personnage :", view=view, ephemeral=True)
 
     @character_group.command(name="switch", description="Changez de personnage actif.")
     async def switch(self, interaction: discord.Interaction, nom: str):
