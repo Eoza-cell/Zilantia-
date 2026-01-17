@@ -4,7 +4,7 @@ def setup_database():
     """
     Sets up the SQLite database for the "Zilantia" world with a multi-character architecture.
     """
-    conn = sqlite3.connect('arcanes.db')
+    conn = sqlite3.connect('zilantia.db')
     cursor = conn.cursor()
 
     # --- Drop Old Tables for a clean slate ---
@@ -135,7 +135,7 @@ def setup_database():
 
     conn.commit()
     conn.close()
-    print("Database `arcanes.db` has been set up for Zilantia.")
+    print("Database `zilantia.db` has been set up for Zilantia.")
 
 if __name__ == '__main__':
     setup_database()

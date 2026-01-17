@@ -29,7 +29,7 @@ async def main():
     load_dotenv()
     TOKEN = os.getenv("DISCORD_TOKEN")
     GUILD_ID = os.getenv("GUILD_ID") # Optional: For instant command syncing on a test server
-    DB_FILE = 'arcanes.db'
+    DB_FILE = 'zilantia.db'
 
     if not os.path.exists(DB_FILE):
         logging.error(f"Database file '{DB_FILE}' not found. Please run `python3 database_setup.py` first.")
@@ -53,15 +53,16 @@ async def main():
 
     async def load_cogs():
         logging.info("--- Loading Cogs ---")
-        for folder in ['cogs', 'cogs/utils']:
-            for filename in os.listdir(f'./{folder}'):
-                if filename.endswith('.py') and not filename.startswith('__'):
-                    cog_name = f"{folder.replace('/', '.')}.{filename[:-3]}"
-                    try:
-                        await bot.load_extension(cog_name)
-                        logging.info(f"✅ Successfully loaded cog: {cog_name}")
-                    except Exception as e:
-                        logging.error(f"❌ Failed to load cog {cog_name}: {e}", exc_info=True)
+        cog_directory = "cogs"
+        for filename in os.listdir(f'./{cog_directory}'):
+            # Load only .py files in the root of the 'cogs' directory
+            if filename.endswith('.py') and os.path.isfile(os.path.join(cog_directory, filename)) and not filename.startswith('__'):
+                cog_name = f"{cog_directory}.{filename[:-3]}"
+                try:
+                    await bot.load_extension(cog_name)
+                    logging.info(f"✅ Successfully loaded cog: {cog_name}")
+                except Exception as e:
+                    logging.error(f"❌ Failed to load cog {cog_name}: {e}", exc_info=True)
         logging.info("--- Cog loading complete ---")
 
     async def sync_commands():

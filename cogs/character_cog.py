@@ -3,6 +3,7 @@ from discord.ext import commands
 from discord import app_commands
 import sqlite3
 from .utils.db_helpers import get_player_by_discord_id, create_player, get_character_by_name_for_player, get_player_characters, get_all_origins, get_active_character, get_db_connection
+from .utils.views import CreateCharacterView
 
 class CharacterCog(commands.Cog):
     def __init__(self, bot):
@@ -172,7 +173,6 @@ class CharacterCog(commands.Cog):
         character = get_active_character(interaction.user.id)
         if not character:
             # Using a more user-friendly view for users without characters
-            from .utils.views import CreateCharacterView
             view = CreateCharacterView()
             await interaction.response.send_message(
                 "Vous n'avez pas encore de personnage. Souhaitez-vous en créer un maintenant ?",
@@ -183,7 +183,10 @@ class CharacterCog(commands.Cog):
 
         embed = discord.Embed(title=f"Profil de {character['name']}", color=discord.Color.dark_purple())
         embed.set_thumbnail(url=interaction.user.avatar.url if interaction.user.avatar else None)
+
+        # Main stats
         embed.add_field(name="Origine", value=character['origin_name'], inline=True)
+        embed.add_field(name="Faction", value=character['faction_name'] if character['faction_name'] else "Aucune", inline=True)
         embed.add_field(name="Niveau", value=character['level'], inline=True)
         embed.add_field(name="XP", value=f"{character['xp']}", inline=True)
         embed.add_field(name="💰 Luxium", value=f"{character['luxium']}", inline=True)

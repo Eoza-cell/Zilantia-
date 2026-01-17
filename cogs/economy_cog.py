@@ -1,8 +1,8 @@
 import discord
 from discord.ext import commands, tasks
+from discord import app_commands
 import sqlite3
-import requests
-import os
+from .utils.db_helpers import get_db_connection, get_active_character, get_character_by_name_global
 
 class EconomyCog(commands.Cog):
     def __init__(self, bot):
@@ -16,7 +16,7 @@ class EconomyCog(commands.Cog):
     async def daily_luxium_distribution(self):
         """Distributes Luxium to territory owners daily."""
         print("Distributing daily Luxium...")
-        conn = sqlite3.connect('arcanes.db')
+        conn = get_db_connection()
         cursor = conn.cursor()
 
         revenue_map = {'Village': 10, 'Ville': 50, 'Cité': 150, 'Royaume': 500, 'Empire': 2000}
@@ -26,10 +26,10 @@ class EconomyCog(commands.Cog):
             territories = cursor.fetchall()
 
             updated_characters = 0
-            for owner_char_id, territory_type in territories:
-                revenue = revenue_map.get(territory_type, 0)
+            for territory in territories:
+                revenue = revenue_map.get(territory['type'], 0)
                 if revenue > 0:
-                    cursor.execute("UPDATE characters SET luxium = luxium + ? WHERE id = ?", (revenue, owner_char_id))
+                    cursor.execute("UPDATE characters SET luxium = luxium + ? WHERE id = ?", (revenue, territory['owner_character_id']))
                     updated_characters += 1
 
             conn.commit()
@@ -46,47 +46,38 @@ class EconomyCog(commands.Cog):
         await self.bot.wait_until_ready()
         print("La tâche de distribution de Luxium est prête.")
 
-    @commands.hybrid_command(name="give", description="Donne du Luxium à un autre personnage.")
+    @app_commands.command(name="give", description="Donne du Luxium à un autre personnage.")
     @app_commands.describe(destinataire="Le nom du personnage à qui donner du Luxium.", montant="Le montant de Luxium à donner.")
-    async def give_luxium(self, ctx, destinataire: str, montant: int):
+    async def give_luxium(self, interaction: discord.Interaction, destinataire: str, montant: int):
         """Transfers Luxium from the active character to another character."""
         if montant <= 0:
-            await ctx.send("Vous devez donner un montant positif de Luxium.", ephemeral=True)
+            await interaction.response.send_message("Vous devez donner un montant positif de Luxium.", ephemeral=True)
             return
 
-        conn = sqlite3.connect('arcanes.db')
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-
-        # Get sender's active character
-        cursor.execute("SELECT c.* FROM characters c JOIN players p ON c.player_id = p.id WHERE p.user_id = ? AND p.active_character_id = c.id", (ctx.author.id,))
-        sender_char = cursor.fetchone()
+        sender_char = get_active_character(interaction.user.id)
 
         if not sender_char:
-            await ctx.send("Vous n'avez pas de personnage actif pour effectuer cette transaction.", ephemeral=True)
-            conn.close()
+            await interaction.response.send_message("Vous n'avez pas de personnage actif pour effectuer cette transaction.", ephemeral=True)
             return
 
         if sender_char['luxium'] < montant:
-            await ctx.send(f"Votre personnage **{sender_char['name']}** n'a pas assez de Luxium. Solde actuel : {sender_char['luxium']}.", ephemeral=True)
-            conn.close()
+            await interaction.response.send_message(f"Votre personnage **{sender_char['name']}** n'a pas assez de Luxium. Solde actuel : {sender_char['luxium']}.", ephemeral=True)
             return
 
-        # Get receiver character
-        cursor.execute("SELECT * FROM characters WHERE name = ?", (destinataire,))
-        receiver_char = cursor.fetchone()
+        receiver_char = get_character_by_name_global(destinataire)
 
         if not receiver_char:
-            await ctx.send(f"Aucun personnage nommé **{destinataire}** n'a été trouvé.", ephemeral=True)
-            conn.close()
+            await interaction.response.send_message(f"Aucun personnage nommé **{destinataire}** n'a été trouvé.", ephemeral=True)
             return
 
         if receiver_char['id'] == sender_char['id']:
-            await ctx.send("Vous ne pouvez pas vous donner de Luxium à vous-même.", ephemeral=True)
-            conn.close()
+            await interaction.response.send_message("Vous ne pouvez pas vous donner de Luxium à vous-même.", ephemeral=True)
             return
 
         # Perform transaction
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
         new_sender_balance = sender_char['luxium'] - montant
         new_receiver_balance = receiver_char['luxium'] + montant
 
@@ -96,7 +87,7 @@ class EconomyCog(commands.Cog):
         conn.commit()
         conn.close()
 
-        await ctx.send(f"**{sender_char['name']}** a donné **{montant} Luxium** à **{receiver_char['name']}**.")
+        await interaction.response.send_message(f"**{sender_char['name']}** a donné **{montant} Luxium** à **{receiver_char['name']}**.")
 
 
 async def setup(bot):
