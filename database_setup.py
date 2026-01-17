@@ -93,19 +93,28 @@ def setup_database():
     )
     ''')
 
-    # 7. Artefacts Table (Owned by a Character)
+    # 7. Artefacts Table
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS artefacts (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL,
-        rarity TEXT,
-        effect TEXT,
-        owner_character_id INTEGER, -- Can be NULL if not owned
-        FOREIGN KEY (owner_character_id) REFERENCES characters(id) ON DELETE SET NULL
+        description TEXT,
+        rarity TEXT NOT NULL CHECK(rarity IN ('Commun', 'Rare', 'Légendaire', 'Unique'))
     )
     ''')
 
-    # 8. World Events Table
+    # 8. Character-Artefacts Linking Table (Inventory)
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS character_artefacts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        character_id INTEGER NOT NULL,
+        artefact_id INTEGER NOT NULL,
+        FOREIGN KEY (character_id) REFERENCES characters(id) ON DELETE CASCADE,
+        FOREIGN KEY (artefact_id) REFERENCES artefacts(id) ON DELETE CASCADE
+    )
+    ''')
+
+    # 9. World Events Table
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS world_events (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -131,6 +140,14 @@ def setup_database():
         'Ombre', 'Assassin', 'Rôdeur', 'Espion'
     ]
     cursor.executemany("INSERT INTO origins (name) VALUES (?)", [(o,) for o in origins])
+
+    # Populate Artefacts with sample data
+    artefacts = [
+        ('Fragment de lune', 'Un éclat de la lune, froid au toucher.', 'Commun'),
+        ('Orbe de vision', 'Permet de voir des fragments du futur.', 'Rare'),
+        ('Lame du chaos', 'Une arme forgée dans le feu du chaos primordial.', 'Légendaire')
+    ]
+    cursor.executemany("INSERT INTO artefacts (name, description, rarity) VALUES (?, ?, ?)", artefacts)
 
 
     conn.commit()

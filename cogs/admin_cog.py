@@ -1,79 +1,76 @@
 import discord
 from discord.ext import commands
 from discord import app_commands
-import sqlite3
-from .utils.db_helpers import get_character_by_name_global
 
-# --- Helper to calculate rank from PP ---
-def get_rank_from_pp(pp: int) -> str:
-    if pp >= 120: return 'SS'
-    if pp >= 95: return 'S'
-    if pp >= 80: return 'A'
-    if pp >= 60: return 'B'
-    if pp >= 40: return 'C'
-    if pp >= 25: return 'D'
-    if pp >= 10: return 'E'
-    return 'F'
+from cogs.utils.db_helpers import get_db_connection
 
 class AdminCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    admin_group = app_commands.Group(name="admin", description="Commandes administratives pour gérer le jeu.", default_permissions=discord.Permissions(administrator=True))
+    @app_commands.command(name="artefact_create", description="Crée un nouvel artefact dans le jeu.")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def artefact_create(self, interaction: discord.Interaction, name: str, description: str, rarity: str):
+        await interaction.response.defer(ephemeral=True)
 
-    @admin_group.command(name="add_pp", description="Ajoute ou retire des Points de Puissance à un personnage.")
-    @app_commands.describe(nom_personnage="Le nom exact du personnage à modifier.", quantite="Le nombre de PP à ajouter (peut être négatif).")
-    async def add_pp(self, interaction: discord.Interaction, nom_personnage: str, quantite: int):
-        target_character = get_character_by_name_global(nom_personnage)
-        if not target_character:
-            await interaction.response.send_message(f"Aucun personnage nommé **{nom_personnage}** n'a été trouvé.", ephemeral=True)
+        rarity_options = ['Commun', 'Rare', 'Légendaire', 'Unique']
+        if rarity.capitalize() not in rarity_options:
+            await interaction.followup.send(f"Rareté invalide. Veuillez choisir parmi: {', '.join(rarity_options)}.")
             return
 
-        conn = sqlite3.connect('arcanes.db')
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute("INSERT INTO artefacts (name, description, rarity) VALUES (?, ?, ?)",
+                           (name, description, rarity.capitalize()))
+            conn.commit()
+            conn.close()
+            await interaction.followup.send(f"L'artefact '{name}' a été créé avec succès.")
+        except Exception as e:
+            print(f"Error in /artefact_create: {e}")
+            await interaction.followup.send("Une erreur est survenue lors de la création de l'artefact.")
 
-        new_pp = target_character['pp'] + quantite
-        new_rank = get_rank_from_pp(new_pp)
+    @app_commands.command(name="give_artefact", description="Donne un artefact à un personnage.")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def give_artefact(self, interaction: discord.Interaction, member: discord.Member, artefact_name: str):
+        await interaction.response.defer(ephemeral=True)
 
-        if new_rank == 'SS' and target_character['rang'] != 'SS':
-            cursor.execute("SELECT id FROM world_events WHERE type = 'SS' AND is_active = TRUE")
-            ss_event_active = cursor.fetchone()
-            if not ss_event_active:
-                await interaction.response.send_message("Action bloquée : Promotion au rang SS non autorisée sans événement 'SS' actif.", ephemeral=True)
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+
+            # Find the artefact by name
+            cursor.execute("SELECT id FROM artefacts WHERE name = ?", (artefact_name,))
+            artefact = cursor.fetchone()
+            if not artefact:
+                await interaction.followup.send("Cet artefact n'existe pas.")
                 conn.close()
                 return
 
-            fondateur_role = discord.utils.get(interaction.user.roles, name="Fondateur")
-            if not fondateur_role:
-                await interaction.response.send_message("Action bloquée : Vous devez avoir le rôle 'Fondateur' pour attribuer le rang SS.", ephemeral=True)
+            # Find the user's active character
+            cursor.execute('''
+                SELECT c.id
+                FROM characters c
+                JOIN players p ON c.player_id = p.id
+                WHERE p.user_id = ? AND p.active_character_id = c.id
+            ''', (member.id,))
+            character = cursor.fetchone()
+            if not character:
+                await interaction.followup.send(f"L'utilisateur {member.display_name} n'a pas de personnage actif.")
                 conn.close()
                 return
 
-        cursor.execute("UPDATE characters SET pp = ?, rank = ? WHERE id = ?", (new_pp, new_rank, target_character['id']))
-        conn.commit()
-        conn.close()
+            # Give the artefact to the character
+            cursor.execute("INSERT INTO character_artefacts (character_id, artefact_id) VALUES (?, ?)",
+                           (character['id'], artefact['id']))
+            conn.commit()
+            conn.close()
 
-        await interaction.response.send_message(f"**{quantite} PP** ajoutés à **{nom_personnage}**. Total : {new_pp} PP. Rang : {new_rank}.")
+            await interaction.followup.send(f"L'artefact '{artefact_name}' a été donné à {member.display_name}.")
 
-    @admin_group.command(name="add_luxium", description="Ajoute ou retire du Luxium à un personnage.")
-    @app_commands.describe(nom_personnage="Le nom exact du personnage.", quantite="La quantité de Luxium à ajouter (peut être négative).")
-    async def add_luxium(self, interaction: discord.Interaction, nom_personnage: str, quantite: int):
-        target_character = get_character_by_name_global(nom_personnage)
-        if not target_character:
-            await interaction.response.send_message(f"Aucun personnage nommé **{nom_personnage}** n'a été trouvé.", ephemeral=True)
-            return
-
-        conn = sqlite3.connect('arcanes.db')
-        cursor = conn.cursor()
-
-        new_balance = target_character['luxium'] + quantite
-
-        cursor.execute("UPDATE characters SET luxium = ? WHERE id = ?", (new_balance, target_character['id']))
-        conn.commit()
-        conn.close()
-
-        await interaction.response.send_message(f"**{quantite} Luxium** ajoutés à **{nom_personnage}**. Solde : {new_balance} Luxium.")
+        except Exception as e:
+            print(f"Error in /give_artefact: {e}")
+            await interaction.followup.send("Une erreur est survenue lors de l'attribution de l'artefact.")
 
 async def setup(bot):
     await bot.add_cog(AdminCog(bot))
