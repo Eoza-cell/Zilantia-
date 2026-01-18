@@ -54,6 +54,7 @@ class ExplorationCog(commands.Cog):
             description=character['zone_description'],
             color=discord.Color.dark_teal()
         )
+        embed.set_image(url="https://pollinations.ai/p/conceptual_isometric_world_of_pollinations_ai_surreal_hyperrealistic_digital_garden")
         embed.set_author(name=f"Emplacement de {character['name']}")
 
         if npcs_in_zone:
