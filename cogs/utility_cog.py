@@ -2,18 +2,22 @@ import discord
 from discord.ext import commands
 from discord import app_commands
 import requests
+import os
 
 class UtilityCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        self.api_key = os.getenv("POLLINATION_API_KEY")
 
     @app_commands.command(name="image", description="Génère une image via une IA.")
     @app_commands.describe(prompt="La description de l'image à générer.")
     async def image(self, interaction: discord.Interaction, prompt: str):
         """Generates an image from a prompt using Pollinations.ai."""
         await interaction.response.defer()
-        # Corrected URL based on user-provided curl command
+
         url = f"https://gen.pollinations.ai/image/{prompt.replace(' ', '%20')}"
+        if self.api_key:
+            url += f"?apikey={self.api_key}"
 
         try:
             # Use a HEAD request to check the content type before sending the embed
@@ -36,7 +40,10 @@ class UtilityCog(commands.Cog):
     async def text(self, interaction: discord.Interaction, prompt: str):
         """Generates text from a prompt using Pollinations.ai."""
         await interaction.response.defer()
+
         url = f"https://gen.pollinations.ai/text/{prompt.replace(' ', '%20')}"
+        if self.api_key:
+            url += f"?apikey={self.api_key}"
 
         try:
             response = requests.get(url, timeout=20)

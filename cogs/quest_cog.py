@@ -3,6 +3,7 @@ from discord.ext import commands
 from discord import app_commands
 import sqlite3
 import requests
+import os
 
 # Helper function to get the active character
 def get_active_character(user_id):
@@ -76,6 +77,7 @@ class QuestAcceptView(discord.ui.View):
 class QuestCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        self.api_key = os.getenv("POLLINATION_API_KEY")
 
     @app_commands.command(name="parler", description="Parler à un personnage non-joueur (PNJ).")
     @app_commands.describe(nom_pnj="Le nom du PNJ avec qui vous voulez parler.")
@@ -103,6 +105,8 @@ class QuestCog(commands.Cog):
         dialogue = "Le PNJ vous regarde sans dire un mot." # Default
         try:
             url = f"https://gen.pollinations.ai/text/{dialogue_prompt.replace(' ', '%20')}"
+            if self.api_key:
+                url += f"?apikey={self.api_key}"
             response = requests.get(url, timeout=20)
             response.raise_for_status()
             data = response.json()
