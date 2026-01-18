@@ -2,6 +2,8 @@ import discord
 from discord.ext import commands
 from discord import app_commands
 import sqlite3
+import requests
+import os
 
 # Helper function to get the active character, now including zone info
 def get_active_character_with_zone(user_id):
@@ -34,6 +36,7 @@ def get_active_character_with_zone(user_id):
 class ExplorationCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        self.api_key = os.getenv("POLLINATION_API_KEY")
 
     @app_commands.command(name="ou-suis-je", description="Affiche les informations sur votre zone actuelle.")
     async def where_am_i(self, interaction: discord.Interaction):
@@ -42,19 +45,26 @@ class ExplorationCog(commands.Cog):
             await interaction.response.send_message("Vous devez d'abord créer un personnage.", ephemeral=True)
             return
 
+        await interaction.response.defer()
+
         conn = sqlite3.connect('zilantia.db')
         cursor = conn.cursor()
-        # Find NPCs in the current zone (case-insensitive)
         cursor.execute("SELECT name FROM npcs WHERE lower(zone) = ?", (character['zone_name'].lower(),))
         npcs_in_zone = [row[0] for row in cursor.fetchall()]
         conn.close()
+
+        # --- Generate Image ---
+        prompt = f"fantasy landscape, {character['zone_description'].replace('.', '')}, digital art"
+        image_url = f"https://pollinations.ai/p/{prompt.replace(' ', '%20')}"
+        if self.api_key:
+            image_url += f"?apikey={self.api_key}"
 
         embed = discord.Embed(
             title=f"📍 {character['zone_name']}",
             description=character['zone_description'],
             color=discord.Color.dark_teal()
         )
-        embed.set_image(url="https://pollinations.ai/p/conceptual_isometric_world_of_pollinations_ai_surreal_hyperrealistic_digital_garden")
+        embed.set_image(url=image_url)
         embed.set_author(name=f"Emplacement de {character['name']}")
 
         if npcs_in_zone:

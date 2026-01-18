@@ -2,6 +2,8 @@ import discord
 from discord.ext import commands
 from discord import app_commands
 import sqlite3
+import requests
+import os
 
 # Helper function to get full character stats including combat and zone info
 def get_character_full_stats(user_id):
@@ -33,6 +35,7 @@ def get_character_full_stats(user_id):
 class CombatCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        self.api_key = os.getenv("POLLINATION_API_KEY")
 
     boss_group = app_commands.Group(name="boss", description="Commandes liées aux boss du monde.")
 
@@ -42,6 +45,8 @@ class CombatCog(commands.Cog):
         if not character:
             await interaction.response.send_message("Vous devez d'abord créer un personnage.", ephemeral=True)
             return
+
+        await interaction.response.defer()
 
         conn = sqlite3.connect('zilantia.db')
         cursor = conn.cursor()
@@ -54,23 +59,30 @@ class CombatCog(commands.Cog):
         conn.close()
 
         if not boss:
-            await interaction.response.send_message("Il n'y a aucun boss actif dans cette zone.", ephemeral=True)
+            await interaction.followup.send("Il n'y a aucun boss actif dans cette zone.", ephemeral=True)
             return
 
         name, description, hp, attack, level = boss
+
+        # --- Generate Image ---
+        prompt = f"epic fantasy boss, {description.replace('.', '')}, dark fantasy art, cinematic lighting"
+        image_url = f"https://pollinations.ai/p/{prompt.replace(' ', '%20')}"
+        if self.api_key:
+            image_url += f"?apikey={self.api_key}"
 
         embed = discord.Embed(
             title=f" menace détectée : {name}",
             description=description,
             color=discord.Color.dark_red()
         )
+        embed.set_image(url=image_url)
         embed.set_author(name=f"Boss de la zone : {character['zone_name']}")
         embed.add_field(name="Niveau Requis", value=level, inline=True)
         embed.add_field(name="Points de Vie", value=hp, inline=True)
         embed.add_field(name="Attaque", value=attack, inline=True)
         embed.set_footer(text="Utilisez /boss attaquer pour engager le combat.")
 
-        await interaction.response.send_message(embed=embed)
+        await interaction.followup.send(embed=embed)
 
     @boss_group.command(name="attaquer", description="Engage le combat avec le boss de la zone.")
     async def attack_boss(self, interaction: discord.Interaction):
