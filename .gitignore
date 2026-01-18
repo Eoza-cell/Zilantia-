@@ -1,4 +1,5 @@
 # SQLite database
+zilantia.db
 arcanes.db
 
 # Python virtual environment
@@ -9,3 +10,6 @@ __pycache__/
 .vscode/
 .idea/
 .env
+
+# Log files
+bot.log

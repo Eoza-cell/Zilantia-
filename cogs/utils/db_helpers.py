@@ -3,7 +3,7 @@ import sqlite3
 # --- Connection Helper ---
 def get_db_connection():
     """Establishes a connection to the database."""
-    conn = sqlite3.connect('arcanes.db')
+    conn = sqlite3.connect('zilantia.db')
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -25,12 +25,23 @@ def create_player(discord_id: int, discord_name: str):
 
 # --- Character Helpers ---
 def get_active_character(discord_id: int):
-    """Fetches the active character for a Discord user."""
+    """Fetches the active character for a Discord user, including origin and faction names."""
     conn = get_db_connection()
     character = conn.execute("""
-        SELECT c.* FROM characters c
-        JOIN players p ON c.player_id = p.id
-        WHERE p.user_id = ? AND p.active_character_id = c.id
+        SELECT
+            c.*,
+            o.name as origin_name,
+            f.name as faction_name
+        FROM
+            characters c
+        JOIN
+            players p ON c.player_id = p.id
+        JOIN
+            origins o ON c.origin_id = o.id
+        LEFT JOIN
+            factions f ON c.faction_id = f.id
+        WHERE
+            p.user_id = ? AND p.active_character_id = c.id
     """, (discord_id,)).fetchone()
     conn.close()
     return character
@@ -55,6 +66,20 @@ def get_player_characters(player_id: int):
     characters = conn.execute("SELECT * FROM characters WHERE player_id = ?", (player_id,)).fetchall()
     conn.close()
     return characters
+
+def get_all_origins():
+    """Fetches all available origins from the database."""
+    conn = get_db_connection()
+    origins = conn.execute("SELECT * FROM origins ORDER BY name").fetchall()
+    conn.close()
+    return origins
+
+def get_all_factions():
+    """Fetches all available factions from the database."""
+    conn = get_db_connection()
+    factions = conn.execute("SELECT * FROM factions ORDER BY name").fetchall()
+    conn.close()
+    return factions
 
 # --- Territory Helpers ---
 def get_territory_by_name_for_character(character_id: int, name: str):
