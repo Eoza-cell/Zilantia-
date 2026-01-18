@@ -75,15 +75,15 @@ class CharacterCog(commands.Cog):
 
         characters = get_player_characters(player['id'])
         if characters:
-            await interaction.response.send_message("Vous avez déjà un personnage. Utilisez `/character create` pour en créer un autre.", ephemeral=True)
+            await interaction.response.send_message("Vous avez déjà un personnage. Utilisez `/personnage créer` pour en créer un autre.", ephemeral=True)
             return
 
         view = self.OriginSelectionView(player_id=player['id'], character_name=nom, set_as_active=True)
         await interaction.response.send_message("Votre voyage commence. Choisissez l'origine de votre personnage :", view=view, ephemeral=True)
 
-    character_group = app_commands.Group(name="character", description="Gérez vos personnages secondaires.")
+    character_group = app_commands.Group(name="personnage", description="Gérez vos personnages.")
 
-    @character_group.command(name="create", description="Crée un nouveau personnage.")
+    @character_group.command(name="créer", description="Crée un nouveau personnage.")
     async def create(self, interaction: discord.Interaction, nom: str):
         player = get_player_by_discord_id(interaction.user.id)
         if not player:
@@ -99,7 +99,7 @@ class CharacterCog(commands.Cog):
         view = self.OriginSelectionView(player_id=player['id'], character_name=nom, set_as_active=should_set_active)
         await interaction.response.send_message("Choisissez l'origine de votre nouveau personnage :", view=view, ephemeral=True)
 
-    @character_group.command(name="switch", description="Changez de personnage actif.")
+    @character_group.command(name="changer", description="Changez de personnage actif.")
     async def switch(self, interaction: discord.Interaction, nom: str):
         player = get_player_by_discord_id(interaction.user.id)
         if not player:
@@ -118,7 +118,7 @@ class CharacterCog(commands.Cog):
         conn.close()
         await interaction.response.send_message(f"Votre personnage actif est maintenant **{nom}**.")
 
-    @character_group.command(name="delete", description="Supprime l'un de vos personnages.")
+    @character_group.command(name="supprimer", description="Supprime l'un de vos personnages.")
     @app_commands.describe(nom="Le nom exact du personnage à supprimer.")
     async def delete(self, interaction: discord.Interaction, nom: str):
         player = get_player_by_discord_id(interaction.user.id)
@@ -147,7 +147,7 @@ class CharacterCog(commands.Cog):
         conn.close()
         await interaction.response.send_message(f"Le personnage **{nom}** a été supprimé.")
 
-    @character_group.command(name="list", description="Affiche la liste de vos personnages.")
+    @character_group.command(name="liste", description="Affiche la liste de vos personnages.")
     async def list(self, interaction: discord.Interaction):
         player = get_player_by_discord_id(interaction.user.id)
         if not player:
@@ -168,7 +168,7 @@ class CharacterCog(commands.Cog):
         embed = discord.Embed(title=f"Personnages de {interaction.user.name}", description=description, color=discord.Color.dark_green())
         await interaction.response.send_message(embed=embed)
 
-    @app_commands.command(name="profile", description="Affiche le profil de votre personnage actif.")
+    @app_commands.command(name="profil", description="Affiche le profil de votre personnage actif.")
     async def profile(self, interaction: discord.Interaction):
         character = get_active_character(interaction.user.id)
         if not character:

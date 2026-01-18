@@ -9,7 +9,7 @@ class InventoryCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @app_commands.command(name="inventory", description="Affiche l'inventaire de votre personnage actif.")
+    @app_commands.command(name="inventaire", description="Affiche l'inventaire de votre personnage actif.")
     async def inventory(self, interaction: discord.Interaction):
         await interaction.response.defer()
         user_id = interaction.user.id

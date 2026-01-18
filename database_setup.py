@@ -9,9 +9,14 @@ def setup_database():
 
     # --- Drop Old Tables for a clean slate ---
     # We drop them in reverse order of creation due to foreign key constraints
+    cursor.execute("DROP TABLE IF EXISTS character_quests")
+    cursor.execute("DROP TABLE IF EXISTS quests")
+    cursor.execute("DROP TABLE IF EXISTS npcs")
+    cursor.execute("DROP TABLE IF EXISTS bosses")
+    cursor.execute("DROP TABLE IF EXISTS zones")
+    cursor.execute("DROP TABLE IF EXISTS character_artefacts")
     cursor.execute("DROP TABLE IF EXISTS artefacts")
     cursor.execute("DROP TABLE IF EXISTS world_events")
-    cursor.execute("DROP TABLE IF EXISTS pnjs_dynamiques")
     cursor.execute("DROP TABLE IF EXISTS territories")
     cursor.execute("DROP TABLE IF EXISTS characters")
     cursor.execute("DROP TABLE IF EXISTS origins")
@@ -55,17 +60,46 @@ def setup_database():
         name TEXT NOT NULL,
         level INTEGER DEFAULT 1,
         xp INTEGER DEFAULT 0,
+        hp INTEGER DEFAULT 100, -- Health Points
+        attack INTEGER DEFAULT 10, -- Attack Power
         luxium INTEGER DEFAULT 100,
         origin_id INTEGER NOT NULL,
         faction_id INTEGER, -- Can be NULL until a faction is chosen
+        current_zone_id INTEGER DEFAULT 1, -- Default to the starting zone
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (player_id) REFERENCES players(id) ON DELETE CASCADE,
         FOREIGN KEY (origin_id) REFERENCES origins(id),
-        FOREIGN KEY (faction_id) REFERENCES factions(id) ON DELETE SET NULL
+        FOREIGN KEY (faction_id) REFERENCES factions(id) ON DELETE SET NULL,
+        FOREIGN KEY (current_zone_id) REFERENCES zones(id)
     )
     ''')
 
-    # 5. Territories Table (Owned by a Character)
+    # 5. Zones Table
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS zones (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL UNIQUE,
+        description TEXT,
+        required_level INTEGER DEFAULT 1
+    )
+    ''')
+
+    # 6. Bosses Table
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS bosses (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL UNIQUE,
+        description TEXT,
+        hp INTEGER NOT NULL,
+        attack INTEGER NOT NULL,
+        zone_id INTEGER NOT NULL,
+        required_level INTEGER DEFAULT 1,
+        is_active BOOLEAN DEFAULT TRUE,
+        FOREIGN KEY (zone_id) REFERENCES zones(id)
+    )
+    ''')
+
+    # 7. Territories Table (Owned by a Character)
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS territories (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -80,20 +114,44 @@ def setup_database():
     )
     ''')
 
-    # 6. PNJ Table (Linked to a Territory)
+    # 8. NPCs Table
     cursor.execute('''
-    CREATE TABLE IF NOT EXISTS pnjs_dynamiques (
+    CREATE TABLE IF NOT EXISTS npcs (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL,
-        role TEXT,
-        loyalty INTEGER,
-        hostility INTEGER,
-        territory_id INTEGER,
-        FOREIGN KEY (territory_id) REFERENCES territories(id) ON DELETE SET NULL
+        name TEXT NOT NULL UNIQUE,
+        description TEXT,
+        zone TEXT NOT NULL,
+        dialogue_prompt TEXT
     )
     ''')
 
-    # 7. Artefacts Table
+    # 9. Quests Table
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS quests (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT NOT NULL UNIQUE,
+        description TEXT,
+        npc_id INTEGER NOT NULL,
+        required_level INTEGER DEFAULT 1,
+        reward_xp INTEGER DEFAULT 0,
+        reward_luxium INTEGER DEFAULT 0,
+        FOREIGN KEY (npc_id) REFERENCES npcs(id)
+    )
+    ''')
+
+    # 10. Character-Quests Linking Table
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS character_quests (
+        character_id INTEGER NOT NULL,
+        quest_id INTEGER NOT NULL,
+        status TEXT NOT NULL CHECK(status IN ('proposée', 'active', 'terminée')),
+        PRIMARY KEY (character_id, quest_id),
+        FOREIGN KEY (character_id) REFERENCES characters(id) ON DELETE CASCADE,
+        FOREIGN KEY (quest_id) REFERENCES quests(id) ON DELETE CASCADE
+    )
+    ''')
+
+    # 11. Artefacts Table
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS artefacts (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -103,7 +161,7 @@ def setup_database():
     )
     ''')
 
-    # 8. Character-Artefacts Linking Table (Inventory)
+    # 12. Character-Artefacts Linking Table (Inventory)
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS character_artefacts (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -114,7 +172,7 @@ def setup_database():
     )
     ''')
 
-    # 9. World Events Table
+    # 13. World Events Table
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS world_events (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -148,6 +206,53 @@ def setup_database():
         ('Lame du chaos', 'Une arme forgée dans le feu du chaos primordial.', 'Légendaire')
     ]
     cursor.executemany("INSERT INTO artefacts (name, description, rarity) VALUES (?, ?, ?)", artefacts)
+
+    # Populate Zones
+    zones = [
+        ('Clairière des Murmures', 'Une clairière paisible où les nouveaux aventuriers commencent leur voyage. La magie y est douce.', 1),
+        ('Forêt des Ombres', 'Une forêt dense et sombre, peuplée de créatures mystérieuses. On dit que les arbres chuchotent des secrets anciens.', 5)
+    ]
+    cursor.executemany("INSERT INTO zones (name, description, required_level) VALUES (?, ?, ?)", zones)
+
+    # Populate Bosses
+    # Zone ID for "Forêt des Ombres" is 2
+    cursor.execute(
+        "INSERT INTO bosses (name, description, hp, attack, zone_id, required_level) VALUES (?, ?, ?, ?, ?, ?)",
+        (
+            'Gardien Sombre',
+            'Une créature massive de bois et d\'ombre, protégeant les secrets les plus profonds de la forêt.',
+            500,
+            40,
+            2, # Forêt des Ombres
+            10
+        )
+    )
+
+    # Populate NPCs
+    cursor.execute(
+        "INSERT INTO npcs (name, description, zone, dialogue_prompt) VALUES (?, ?, ?, ?)",
+        (
+            'Elara',
+            'Une mystérieuse gardienne du savoir ancien, ses yeux brillent d\'une lueur sage.',
+            'Clairière des Murmures',
+            'Salutations, voyageur. Le vent m\'a parlé de votre venue. Que cherchez-vous en ces terres ancestrales ?'
+        )
+    )
+    # Get Elara's ID for the quest
+    elara_id = cursor.lastrowid
+
+    # Populate Quests
+    cursor.execute(
+        "INSERT INTO quests (title, description, npc_id, required_level, reward_xp, reward_luxium) VALUES (?, ?, ?, ?, ?, ?)",
+        (
+            "L'Aube d'un Aventurier",
+            "Faites vos premiers pas à Zilantia. Parlez à Elara pour comprendre votre destinée et recevoir votre première mission.",
+            elara_id,
+            1,
+            50,
+            10
+        )
+    )
 
 
     conn.commit()
