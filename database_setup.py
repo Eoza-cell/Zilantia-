@@ -20,7 +20,7 @@ def setup_database():
     # --- Create New Tables ---
 
     # 1. Players Table
-    cursor.execute('''
+    cursor.execute("""
     CREATE TABLE IF NOT EXISTS players (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id INTEGER UNIQUE NOT NULL,
@@ -28,11 +28,11 @@ def setup_database():
         active_character_id INTEGER,
         FOREIGN KEY (active_character_id) REFERENCES characters(id) ON DELETE SET NULL
     )
-    ''')
+    """)
 
     # 2. Characters Table
     # Stats: STR, AGI, DEF, POW, ACC, END
-    cursor.execute('''
+    cursor.execute("""
     CREATE TABLE IF NOT EXISTS characters (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         player_id INTEGER NOT NULL,
@@ -64,20 +64,20 @@ def setup_database():
         FOREIGN KEY (faction_id) REFERENCES factions(id) ON DELETE SET NULL,
         FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE SET NULL
     )
-    ''')
+    """)
 
     # 3. Factions Table
-    cursor.execute('''
+    cursor.execute("""
     CREATE TABLE IF NOT EXISTS factions (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT UNIQUE NOT NULL,
         description TEXT,
         influence INTEGER DEFAULT 0
     )
-    ''')
+    """)
 
     # 4. Zones Table
-    cursor.execute('''
+    cursor.execute("""
     CREATE TABLE IF NOT EXISTS zones (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT UNIQUE NOT NULL,
@@ -87,10 +87,10 @@ def setup_database():
         controlling_faction_id INTEGER,
         FOREIGN KEY (controlling_faction_id) REFERENCES factions(id) ON DELETE SET NULL
     )
-    ''')
+    """)
 
     # 5. Character Memory (Log of actions/decisions)
-    cursor.execute('''
+    cursor.execute("""
     CREATE TABLE IF NOT EXISTS character_memory (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         character_id INTEGER NOT NULL,
@@ -99,10 +99,10 @@ def setup_database():
         timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (character_id) REFERENCES characters(id) ON DELETE CASCADE
     )
-    ''')
+    """)
 
     # 6. NPCs Table
-    cursor.execute('''
+    cursor.execute("""
     CREATE TABLE IF NOT EXISTS npcs (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL,
@@ -113,10 +113,10 @@ def setup_database():
         FOREIGN KEY (faction_id) REFERENCES factions(id) ON DELETE SET NULL,
         FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE SET NULL
     )
-    ''')
+    """)
 
     # 7. Events Table (World Persistence)
-    cursor.execute('''
+    cursor.execute("""
     CREATE TABLE IF NOT EXISTS events (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL,
@@ -126,13 +126,13 @@ def setup_database():
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE SET NULL
     )
-    ''')
+    """)
 
     # --- Seed Initial Data ---
 
     # Factions
     factions = [
-        ('AEGIS', 'Organisation mondiale qui cache l\'existence des failles.'),
+        ('AEGIS', "Organisation mondiale qui cache l'existence des failles."),
         ('NEON LABS', 'Corporation expérimentant sur les éveillés.'),
         ('BLACK VEIL', 'Syndicat du crime surnaturel.'),
         ('Éveillés Libres', 'Civils, mercenaires et survivants indépendants.')
@@ -158,7 +158,7 @@ def setup_database():
 
     conn.commit()
     conn.close()
-    print(f"Database `{db_file}` has been set up for Aetheris.")
+    print(f"Database {db_file} has been set up for Aetheris.")
 
 if __name__ == '__main__':
     setup_database()
