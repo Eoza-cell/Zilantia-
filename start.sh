@@ -5,7 +5,7 @@ set -e
 
 # Run the database setup script only if the DB doesn't exist
 if [ ! -f aetheris.db ]; then
-    echo "Database aetheris.db not found. Running database setup..."
+    echo "Database aetheris.db not found. Initializing..."
     python3 database_setup.py
 fi
 
