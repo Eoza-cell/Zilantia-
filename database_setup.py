@@ -3,16 +3,16 @@ import os
 
 def setup_database():
     """
-    Sets up the SQLite database for the "Aetheris" world.
+    Sets up the SQLite database for the Aetheris world.
     """
-    db_file = 'aetheris.db'
+    db_file = "aetheris.db"
     conn = sqlite3.connect(db_file)
     cursor = conn.cursor()
 
     # --- Drop Old Tables ---
     tables = [
-        'combat_history', 'character_memory', 'actions', 'events',
-        'npcs', 'factions', 'zones', 'characters', 'players'
+        "combat_history", "character_memory", "actions", "events",
+        "npcs", "factions", "zones", "characters", "players"
     ]
     for table in tables:
         cursor.execute(f"DROP TABLE IF EXISTS {table}")
@@ -31,34 +31,27 @@ def setup_database():
     """)
 
     # 2. Characters Table
-    # Stats: STR, AGI, DEF, POW, ACC, END
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS characters (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         player_id INTEGER NOT NULL,
         name TEXT NOT NULL,
-        power_type TEXT, -- Électrokinésie, Pyrokinésie, etc.
+        power_type TEXT,
         level INTEGER DEFAULT 1,
         xp INTEGER DEFAULT 0,
-
-        -- Stats
         str INTEGER DEFAULT 10,
         agi INTEGER DEFAULT 10,
         def INTEGER DEFAULT 10,
         pow INTEGER DEFAULT 10,
         acc INTEGER DEFAULT 10,
         end INTEGER DEFAULT 10,
-
-        -- State
         hp INTEGER DEFAULT 100,
         max_hp INTEGER DEFAULT 100,
         fatigue INTEGER DEFAULT 0,
         reputation INTEGER DEFAULT 0,
-        status TEXT DEFAULT 'Neutre', -- Recherché, Protégé, Neutre
-
+        status TEXT DEFAULT "Neutre",
         faction_id INTEGER,
         zone_id INTEGER,
-
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (player_id) REFERENCES players(id) ON DELETE CASCADE,
         FOREIGN KEY (faction_id) REFERENCES factions(id) ON DELETE SET NULL,
@@ -81,7 +74,7 @@ def setup_database():
     CREATE TABLE IF NOT EXISTS zones (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT UNIQUE NOT NULL,
-        type TEXT NOT NULL, -- Surveillée, Corrompue, Instable, Secrète
+        type TEXT NOT NULL,
         description TEXT,
         danger_level INTEGER DEFAULT 1,
         controlling_faction_id INTEGER,
@@ -89,7 +82,7 @@ def setup_database():
     )
     """)
 
-    # 5. Character Memory (Log of actions/decisions)
+    # 5. Character Memory
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS character_memory (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -115,7 +108,7 @@ def setup_database():
     )
     """)
 
-    # 7. Events Table (World Persistence)
+    # 7. Events Table
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS events (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -129,36 +122,32 @@ def setup_database():
     """)
 
     # --- Seed Initial Data ---
-
-    # Factions
     factions = [
-        ('AEGIS', "Organisation mondiale qui cache l'existence des failles."),
-        ('NEON LABS', 'Corporation expérimentant sur les éveillés.'),
-        ('BLACK VEIL', 'Syndicat du crime surnaturel.'),
-        ('Éveillés Libres', 'Civils, mercenaires et survivants indépendants.')
+        ("AEGIS", "Organisation mondiale qui cache l existence des failles."),
+        ("NEON LABS", "Corporation experimentant sur les eveilles."),
+        ("BLACK VEIL", "Syndicat du crime surnaturel."),
+        ("Eveilles Libres", "Civils, mercenaires et survivants independants.")
     ]
     cursor.executemany("INSERT INTO factions (name, description) VALUES (?, ?)", factions)
 
-    # Zones
     zones = [
-        ('Centre-Ville', 'Surveillée', 'Le coeur de la métropole, hautement sécurisé par AEGIS.', 1, 1),
-        ('Quartier Industriel', 'Corrompue', 'Anciennes usines servant de laboratoires à NEON LABS.', 3, 2),
-        ('Les Docks', 'Instable', 'Territoire disputé par BLACK VEIL, failles fréquentes.', 4, 3),
-        ('Zone de Faille Alpha', 'Instable', 'Réalité fragmentée, entités non humaines signalées.', 5, None)
+        ("Centre-Ville", "Surveillee", "Le coeur de la metropole, hautement securise par AEGIS.", 1, 1),
+        ("Quartier Industriel", "Corrompue", "Anciennes usines servant de laboratoires a NEON LABS.", 3, 2),
+        ("Les Docks", "Instable", "Territoire dispute par BLACK VEIL, failles frequentes.", 4, 3),
+        ("Zone de Faille Alpha", "Instable", "Realite fragmentee, entites non humaines signalees.", 5, None)
     ]
     cursor.executemany("INSERT INTO zones (name, type, description, danger_level, controlling_faction_id) VALUES (?, ?, ?, ?, ?)", zones)
 
-    # NPCs
     npcs = [
-        ('Agent K', 'Commandant de terrain AEGIS', 'https://pollinations.ai/p/cool%20secret%20agent%20man%20suit%20cyberpunk', 1, 1),
-        ('Dr. Aris', 'Chercheuse en chef NEON LABS', 'https://pollinations.ai/p/female%20scientist%20neon%20glasses', 2, 2),
-        ('Vane', 'Chef de gang BLACK VEIL', 'https://pollinations.ai/p/punk%20leader%20shadow%20mask', 3, 3)
+        ("Agent K", "Commandant de terrain AEGIS", "https://pollinations.ai/p/cool%20secret%20agent%20man%20suit%20cyberpunk", 1, 1),
+        ("Dr. Aris", "Chercheuse en chef NEON LABS", "https://pollinations.ai/p/female%20scientist%20neon%20glasses", 2, 2),
+        ("Vane", "Chef de gang BLACK VEIL", "https://pollinations.ai/p/punk%20leader%20shadow%20mask", 3, 3)
     ]
     cursor.executemany("INSERT INTO npcs (name, role, avatar_url, faction_id, zone_id) VALUES (?, ?, ?, ?, ?)", npcs)
 
     conn.commit()
     conn.close()
-    print(f"Database {db_file} has been set up for Aetheris.")
+    print("Database setup complete.")
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     setup_database()

@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: aetheris-bot
+    name: aetheris-rpg
     env: python
     plan: free
     buildCommand: "pip install -r requirements.txt && python3 database_setup.py"
