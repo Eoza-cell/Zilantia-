@@ -1,105 +1,153 @@
 import sqlite3
+import os
 
 def setup_database():
     """
-    Sets up the SQLite database for the "Ère des Arcanes" world with a multi-character architecture.
+    Sets up the SQLite database for the Aetheris world.
     """
-    conn = sqlite3.connect('arcanes.db')
+    db_file = "aetheris.db"
+    conn = sqlite3.connect(db_file)
     cursor = conn.cursor()
 
-    # --- Drop Old Tables for a clean slate ---
-    # We drop them in reverse order of creation due to foreign key constraints
-    cursor.execute("DROP TABLE IF EXISTS artefacts")
-    cursor.execute("DROP TABLE IF EXISTS world_events")
-    cursor.execute("DROP TABLE IF EXISTS pnjs_dynamiques")
-    cursor.execute("DROP TABLE IF EXISTS territories")
-    cursor.execute("DROP TABLE IF EXISTS characters")
-    cursor.execute("DROP TABLE IF EXISTS players")
+    # --- Drop Old Tables ---
+    tables = [
+        "combat_history", "character_memory", "actions", "events",
+        "npcs", "factions", "zones", "characters", "players"
+    ]
+    for table in tables:
+        cursor.execute(f"DROP TABLE IF EXISTS {table}")
 
     # --- Create New Tables ---
 
-    # 1. Players Table (Represents a Discord User)
-    cursor.execute('''
+    # 1. Players Table
+    cursor.execute("""
     CREATE TABLE IF NOT EXISTS players (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER UNIQUE NOT NULL, -- Discord User ID
+        user_id INTEGER UNIQUE NOT NULL,
         user_name TEXT NOT NULL,
         active_character_id INTEGER,
         FOREIGN KEY (active_character_id) REFERENCES characters(id) ON DELETE SET NULL
     )
-    ''')
+    """)
 
-    # 2. Characters Table (Represents an in-game character, linked to a Player)
-    cursor.execute('''
+    # 2. Characters Table
+    cursor.execute("""
     CREATE TABLE IF NOT EXISTS characters (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         player_id INTEGER NOT NULL,
         name TEXT NOT NULL,
-        rang TEXT DEFAULT 'F',
-        pp INTEGER DEFAULT 0,
-        luxium INTEGER DEFAULT 100,
-        ss_validated BOOLEAN DEFAULT FALSE,
+        power_type TEXT,
+        level INTEGER DEFAULT 1,
+        xp INTEGER DEFAULT 0,
+        str INTEGER DEFAULT 10,
+        agi INTEGER DEFAULT 10,
+        def INTEGER DEFAULT 10,
+        pow INTEGER DEFAULT 10,
+        acc INTEGER DEFAULT 10,
+        end INTEGER DEFAULT 10,
+        hp INTEGER DEFAULT 100,
+        max_hp INTEGER DEFAULT 100,
+        fatigue INTEGER DEFAULT 0,
+        reputation INTEGER DEFAULT 0,
+        status TEXT DEFAULT "Neutre",
+        faction_id INTEGER,
+        zone_id INTEGER,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (player_id) REFERENCES players(id) ON DELETE CASCADE
+        FOREIGN KEY (player_id) REFERENCES players(id) ON DELETE CASCADE,
+        FOREIGN KEY (faction_id) REFERENCES factions(id) ON DELETE SET NULL,
+        FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE SET NULL
     )
-    ''')
+    """)
 
-    # 3. Territories Table (Owned by a Character)
-    cursor.execute('''
-    CREATE TABLE IF NOT EXISTS territories (
+    # 3. Factions Table
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS factions (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL,
-        type TEXT NOT NULL, -- Village, Ville, Cité, etc.
-        owner_character_id INTEGER, -- Can be NULL if abandoned
-        population INTEGER DEFAULT 100,
-        loyalty INTEGER DEFAULT 75,
-        army_level INTEGER DEFAULT 1,
-        luxium_balance INTEGER DEFAULT 0,
-        FOREIGN KEY (owner_character_id) REFERENCES characters(id) ON DELETE SET NULL
+        name TEXT UNIQUE NOT NULL,
+        description TEXT,
+        influence INTEGER DEFAULT 0
     )
-    ''')
+    """)
 
-    # 4. PNJ Table (Linked to a Territory)
-    cursor.execute('''
-    CREATE TABLE IF NOT EXISTS pnjs_dynamiques (
+    # 4. Zones Table
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS zones (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT UNIQUE NOT NULL,
+        type TEXT NOT NULL,
+        description TEXT,
+        danger_level INTEGER DEFAULT 1,
+        controlling_faction_id INTEGER,
+        FOREIGN KEY (controlling_faction_id) REFERENCES factions(id) ON DELETE SET NULL
+    )
+    """)
+
+    # 5. Character Memory
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS character_memory (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        character_id INTEGER NOT NULL,
+        action_text TEXT NOT NULL,
+        consequence_text TEXT,
+        timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (character_id) REFERENCES characters(id) ON DELETE CASCADE
+    )
+    """)
+
+    # 6. NPCs Table
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS npcs (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL,
         role TEXT,
-        loyalty INTEGER,
-        hostility INTEGER,
-        territory_id INTEGER,
-        FOREIGN KEY (territory_id) REFERENCES territories(id) ON DELETE SET NULL
+        avatar_url TEXT,
+        faction_id INTEGER,
+        zone_id INTEGER,
+        FOREIGN KEY (faction_id) REFERENCES factions(id) ON DELETE SET NULL,
+        FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE SET NULL
     )
-    ''')
+    """)
 
-    # 5. Artefacts Table (Owned by a Character)
-    cursor.execute('''
-    CREATE TABLE IF NOT EXISTS artefacts (
+    # 7. Events Table
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS events (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL,
-        rarity TEXT,
-        effect TEXT,
-        owner_character_id INTEGER, -- Can be NULL if not owned
-        FOREIGN KEY (owner_character_id) REFERENCES characters(id) ON DELETE SET NULL
-    )
-    ''')
-
-    # --- World Events Table ---
-    cursor.execute('''
-    CREATE TABLE IF NOT EXISTS world_events (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL,
-        type TEXT NOT NULL, -- boss, rebellion, war, etc.
         description TEXT,
+        zone_id INTEGER,
         is_active BOOLEAN DEFAULT TRUE,
-        start_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        end_date TIMESTAMP
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE SET NULL
     )
-    ''')
+    """)
+
+    # --- Seed Initial Data ---
+    factions = [
+        ("AEGIS", "Organisation mondiale qui cache l existence des failles."),
+        ("NEON LABS", "Corporation experimentant sur les eveilles."),
+        ("BLACK VEIL", "Syndicat du crime surnaturel."),
+        ("Eveilles Libres", "Civils, mercenaires et survivants independants.")
+    ]
+    cursor.executemany("INSERT INTO factions (name, description) VALUES (?, ?)", factions)
+
+    zones = [
+        ("Centre-Ville", "Surveillee", "Le coeur de la metropole, hautement securise par AEGIS.", 1, 1),
+        ("Quartier Industriel", "Corrompue", "Anciennes usines servant de laboratoires a NEON LABS.", 3, 2),
+        ("Les Docks", "Instable", "Territoire dispute par BLACK VEIL, failles frequentes.", 4, 3),
+        ("Zone de Faille Alpha", "Instable", "Realite fragmentee, entites non humaines signalees.", 5, None)
+    ]
+    cursor.executemany("INSERT INTO zones (name, type, description, danger_level, controlling_faction_id) VALUES (?, ?, ?, ?, ?)", zones)
+
+    npcs = [
+        ("Agent K", "Commandant de terrain AEGIS", "https://pollinations.ai/p/cool%20secret%20agent%20man%20suit%20cyberpunk", 1, 1),
+        ("Dr. Aris", "Chercheuse en chef NEON LABS", "https://pollinations.ai/p/female%20scientist%20neon%20glasses", 2, 2),
+        ("Vane", "Chef de gang BLACK VEIL", "https://pollinations.ai/p/punk%20leader%20shadow%20mask", 3, 3)
+    ]
+    cursor.executemany("INSERT INTO npcs (name, role, avatar_url, faction_id, zone_id) VALUES (?, ?, ?, ?, ?)", npcs)
 
     conn.commit()
     conn.close()
-    print("Database `arcanes.db` has been set up with the new multi-character architecture.")
+    print("Database setup complete.")
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     setup_database()

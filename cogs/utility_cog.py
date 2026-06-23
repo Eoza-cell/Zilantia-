@@ -1,7 +1,7 @@
 import discord
 from discord.ext import commands
 from discord import app_commands
-import requests
+import aiohttp
 
 class UtilityCog(commands.Cog):
     def __init__(self, bot):
@@ -12,22 +12,22 @@ class UtilityCog(commands.Cog):
     async def image(self, interaction: discord.Interaction, prompt: str):
         """Generates an image from a prompt using Pollinations.ai."""
         await interaction.response.defer()
-        url = f"https://image.pollinations.ai/prompt/{prompt.replace(' ', '%20')}"
+        url = f"https://image.pollinations.ai/prompt/{aiohttp.helpers.quote(prompt)}"
 
         try:
-            # Use a HEAD request to check if the URL is valid and returns an image content type
-            response = requests.head(url, timeout=10)
-            response.raise_for_status()
-            content_type = response.headers.get('content-type')
-            if not content_type or not content_type.startswith('image/'):
-                 raise requests.exceptions.RequestException("Le lien ne pointe pas vers une image valide.")
+            async with aiohttp.ClientSession() as session:
+                async with session.head(url, timeout=10) as response:
+                    response.raise_for_status()
+                    content_type = response.headers.get('content-type')
+                    if not content_type or not content_type.startswith('image/'):
+                         raise Exception("Le lien ne pointe pas vers une image valide.")
 
             embed = discord.Embed(title="Image générée par IA", description=f"**Prompt :** {prompt}", color=discord.Color.blue())
             embed.set_image(url=url)
             embed.set_footer(text="Généré via Pollinations.ai")
             await interaction.followup.send(embed=embed)
 
-        except requests.exceptions.RequestException as e:
+        except Exception as e:
             await interaction.followup.send(f"Une erreur est survenue lors de la génération de l'image. L'API est peut-être indisponible ou le prompt a été refusé. Erreur : {e}", ephemeral=True)
 
 async def setup(bot):

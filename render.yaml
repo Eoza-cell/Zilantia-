@@ -1,7 +1,7 @@
 services:
   - type: web
-    name: zilantia-arcanes
+    name: aetheris-core
     env: python
     plan: free
-    buildCommand: "pip install -r requirements.txt && python3 database_setup.py"
-    startCommand: "python3 arcanes_bot.py"
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "bash start.sh"

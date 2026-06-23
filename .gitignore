@@ -1,5 +1,5 @@
 # SQLite database
-arcanes.db
+*.db
 
 # Python virtual environment
 venv/
